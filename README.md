@@ -54,10 +54,10 @@ Installed something that turns out too heavy? Drop it from context without unins
 
 The same command covers every kind of asset — loadout's own skills and sub-agents,
 a curated third-party plugin, or an MCP server. Third-party binaries are the one
-exception: a plugin cannot run a package manager, so those ship with an install script.
-An entry carried as documentation only, like `superpowers`, is read rather than
-installed through loadout — its value lives in the catalog's Docs column, not in the
-install command.
+exception: a plugin cannot run a package manager, so those install themselves — `graphify`
+is one, and its guide carries the commands. An entry carried as documentation only, like
+`superpowers`, is read rather than installed through loadout — its value lives in the
+catalog's Docs column, not in the install command.
 
 ## Catalog
 
@@ -66,3 +66,4 @@ install command.
 | Name | What it does | Always-on cost | Docs |
 |---|---|---|---|
 | superpowers | Process skills: brainstorming gate, red/green TDD, systematic debugging, subagent-driven development, skill authoring | ~800 tokens per session start, `/clear` and compaction | [guide](integrations/superpowers/README.md) |
+| graphify | Local tree-sitter code graph: `explain` a symbol, trace a `path` between two, query the graph instead of grepping | ~340 tokens per session, plus ~48–105 per read or grep while a graph exists | [guide](integrations/graphify/README.md) |

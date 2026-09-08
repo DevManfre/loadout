@@ -55,10 +55,11 @@ disinstallarlo:
 
 Lo stesso comando copre ogni tipo di asset — le skill e i sub-agent di loadout,
 un plugin di terze parti curato, o un server MCP. I binari di terze parti sono la sola
-eccezione: un plugin non può eseguire un package manager, quindi quelli vengono
-distribuiti con uno script di installazione. Una voce portata solo come documentazione,
-come `superpowers`, si legge invece di installarla tramite loadout — il suo valore sta
-nella colonna Documentazione del catalogo, non nel comando di installazione.
+eccezione: un plugin non può eseguire un package manager, quindi quelli si installano da
+sé — `graphify` è uno di questi, e i comandi stanno nella sua guida. Una voce portata
+solo come documentazione, come `superpowers`, si legge invece di installarla tramite
+loadout — il suo valore sta nella colonna Documentazione del catalogo, non nel comando
+di installazione.
 
 ## Catalogo
 
@@ -67,3 +68,4 @@ nella colonna Documentazione del catalogo, non nel comando di installazione.
 | Nome | Cosa fa | Costo sempre attivo | Documentazione |
 |---|---|---|---|
 | superpowers | Skill di processo: gate di brainstorming, TDD red/green, debugging sistematico, sviluppo guidato da subagent, creazione di skill | ~800 token per avvio sessione, `/clear` e compaction | [guida](integrations/superpowers/README-it.md) |
+| graphify | Grafo di codice locale via tree-sitter: `explain` di un simbolo, `path` tra due, interrogazione del grafo invece del grep | ~340 token per sessione, più ~48–105 per lettura o grep finché esiste un grafo | [guida](integrations/graphify/README-it.md) |
