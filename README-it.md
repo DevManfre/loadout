@@ -44,6 +44,21 @@ claude plugin install loadout@loadout
 claude plugin install superpowers@loadout
 ```
 
+Vuoi comunque tutto loadout in un blocco solo? `scripts/install-all.sh` concatena entrambi
+i percorsi di installazione — l'indice dei plugin e i binari di terze parti che si
+installano da sé — e stampa comunque il costo in token sempre attivo di ogni asset,
+chiedendo conferma prima di pagarlo:
+
+```
+scripts/install-all.sh
+```
+
+È idempotente: un marketplace già aggiunto, un plugin o un binario già installato vengono
+segnalati e saltati, quindi rieseguirlo copre solo quello che manca. Guarda cosa farebbe
+senza modificare nulla con `--dry-run`, accetta in anticipo tutti i costi stampati con
+`--yes`, limitalo a un singolo repository con `--scope project`, e lascia fuori il code
+graph con `--skip-graphify`.
+
 Hai installato qualcosa che si rivela troppo pesante? Toglilo dal contesto senza
 disinstallarlo:
 
