@@ -28,9 +28,11 @@ Straight from Anthropic's own directory, which also carries it:
 /plugin install superpowers@claude-plugins-official
 ```
 
-Both pull the same upstream repository. Loadout vendors nothing and adds no code — what
-it adds is the cost accounting and the per-skill verdicts below. Install it wherever you
-prefer; read this page either way.
+Both pull the same upstream repository, but not the same revision: loadout's entry has
+no `sha` and tracks upstream HEAD, while `claude-plugins-official` pins a specific
+commit — so the byte figures in the table below can drift on loadout's path. Loadout
+vendors nothing and adds no code — what it adds is the cost accounting and the
+per-skill verdicts below. Install it wherever you prefer; read this page either way.
 
 ## Token economy
 
@@ -107,8 +109,10 @@ worded, and neither overrides the other.
 - **The skills self-invoke aggressively.** `using-superpowers` instructs the model to
   invoke a skill whenever there is even a slim chance one applies. Expect more skill
   invocations than you would choose by hand.
-- **It writes to your repo.** The `SessionStart` hook adds a `.gitignore` entry for
-  `docs/superpowers`, its scratch directory for specs and plans. Harmless, but it shows
-  up as an untracked change on a clean tree.
+- **It writes one file, and it's not what you'd guess.** The `SessionStart` hook only
+  prints JSON; it touches nothing. What does write is the subagent-driven-development
+  workspace script, which creates `.superpowers/sdd/.gitignore` containing `*`.
+  `docs/superpowers/` — where `writing-plans` and `brainstorming` save output by
+  default — is left untracked, not ignored.
 - **No commands, no agents.** Everything is skills plus that one hook. There is no
   slash command to discover.

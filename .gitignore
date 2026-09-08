@@ -1,1 +1,5 @@
-docs/superpowers
+# scratch written by superpowers subagent-driven-development workspace script
+.superpowers/
+# default save location for superpowers writing-plans / brainstorming output;
+# this repo keeps its own specs in docs/specs/ and plans in docs/plans/
+docs/superpowers/

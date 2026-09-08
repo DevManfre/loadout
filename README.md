@@ -21,6 +21,9 @@ Then install any catalog entry by name:
 The same command covers every kind of asset — loadout's own skills and sub-agents,
 a curated third-party plugin, or an MCP server. Third-party binaries are the one
 exception: a plugin cannot run a package manager, so those ship with an install script.
+An entry carried as documentation only, like `superpowers`, is read rather than
+installed through loadout — its value lives in the catalog's Docs column, not in the
+install command.
 
 ## Catalog
 
