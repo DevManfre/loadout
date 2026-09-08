@@ -12,11 +12,45 @@ Add the marketplace once:
 /plugin marketplace add DevManfre/loadout
 ```
 
-Then install any catalog entry by name:
+Then install any catalog entry by name.
+
+### One specific asset
 
 ```
-/plugin install <name>@loadout
+/plugin install superpowers@loadout
 ```
+
+Weigh it before you commit to it — this prints the entry's component inventory and its
+projected token cost:
+
+```
+claude plugin details superpowers
+```
+
+Keep it to a single repo instead of your whole account with `--scope`
+(`user` is the default, `project` writes to the repo, `local` stays private to you):
+
+```
+claude plugin install superpowers@loadout --scope project
+```
+
+### Everything
+
+No single command installs a whole marketplace, and that is the point: cost is per
+asset, so you pay it one deliberate call at a time.
+
+```
+claude plugin install loadout@loadout
+claude plugin install superpowers@loadout
+```
+
+Installed something that turns out too heavy? Drop it from context without uninstalling:
+
+```
+/plugin disable superpowers
+```
+
+### What the command covers
 
 The same command covers every kind of asset — loadout's own skills and sub-agents,
 a curated third-party plugin, or an MCP server. Third-party binaries are the one
