@@ -150,8 +150,18 @@ pin_gate() {
   local name=$1 available=$2 measured
   measured=$(manifest_field "$name" 8)
   [ -n "$available" ] || return 0
-  [ "$available" != "unknown" ] || return 0
   [ "$available" != "$measured" ] || return 0
+
+  # A package index does not tell us the target version until the upgrade runs,
+  # so say what is actually known and ask anyway. Treating "unknown" as consent
+  # would exempt half the catalog from the one promise this gate exists to keep.
+  if [ "$available" = unknown ]; then
+    printf '   installed: %s (measured: %s)\n' "$(entry_version "$name")" "$measured"
+    printf '   available: unknown — the package index decides that when it runs\n'
+    printf '   ! the catalog measured %s; an upgrade may land on any later version\n' "$measured"
+    confirm "upgrade anyway?"
+    return
+  fi
 
   printf '   installed: %s (measured: %s)\n' "$(entry_version "$name")" "$(manifest_field "$name" 7)"
   printf '   available: %s  (NOT measured in this catalog)\n' "$available"
@@ -179,8 +189,10 @@ update_entry() {
       note "a plugin update needs a restart of the agent to take effect" ;;
     pypkg)
       case "$(_python_installer)" in
-        uv)   run uv tool upgrade "${source%%\[*}" || _fail "uv tool upgrade failed" ;;
-        pipx) run pipx upgrade "${source%%\[*}" || _fail "pipx upgrade failed" ;;
+        uv)   run uv tool upgrade "${source%%\[*}" \
+                || { _fail "uv tool upgrade failed"; return 0; } ;;
+        pipx) run pipx upgrade "${source%%\[*}" \
+                || { _fail "pipx upgrade failed"; return 0; } ;;
         *)    _fail "no python installer on PATH"; return 0 ;;
       esac
       _ok ;;

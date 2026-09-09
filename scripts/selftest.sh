@@ -476,6 +476,17 @@ it "update upgrades a python entry with the manager that is present"
   HOME=$(mktemp -d) scripts/loadout update --only graphify --yes >/dev/null 2>&1
   assert_contains "pipx upgrade graphifyy" "$(stub_calls)" )
 
+it "a package update still faces the pin gate"
+( stub_dir; absent uv; stub claude; stub pipx; stub graphify
+  out=$(HOME=$(mktemp -d) scripts/loadout update --only graphify --yes 2>&1)
+  assert_contains "the catalog measured 0.9.56" "$out" )
+
+it "a failed package upgrade is not counted as updated"
+( stub_dir; absent uv; stub claude; stub graphify; stub pipx 1
+  out=$(HOME=$(mktemp -d) scripts/loadout update --only graphify --yes 2>&1)
+  assert_contains "FAIL" "$out"
+  assert_contains "0 updated" "$out" )
+
 it "a locally edited own asset is never overwritten"
 ( fake_home=$(mktemp -d); state=$fake_home/state
   trap 'rm -rf "$LOADOUT_ROOT/skills/example-asset"' EXIT
