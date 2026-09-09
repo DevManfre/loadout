@@ -151,7 +151,20 @@ cmd_install() {
   if [ "$OPT_YES" -eq 1 ] || [ -n "$OPT_ONLY" ] || [ -n "$OPT_EXCEPT" ] || [ ! -t 0 ]; then
     mapfile -t selection < <(resolve_selection)
   else
-    mapfile -t selection < <(menu_select $(resolve_selection)) || { note "cancelled"; return 0; }
+    # mapfile's own exit status is never menu_select's — command substitution
+    # runs in a subshell, so its return only reaches us through $(...) here,
+    # captured before mapfile (which always "succeeds" reading empty input)
+    # gets a chance to hide it.
+    local selection_out
+    if selection_out=$(menu_select $(resolve_selection)); then
+      if [ -n "$selection_out" ]; then mapfile -t selection <<< "$selection_out"; else selection=(); fi
+      # The menu just priced this exact set and the user pressed Enter on it:
+      # that is consent for the set, not a license to skip every other prompt.
+      SELECTION_CONFIRMED=1
+    else
+      note "cancelled"
+      return 0
+    fi
   fi
 
   # An entry named explicitly but blocked must say why rather than vanish.
@@ -216,6 +229,37 @@ cmd_remove() {
   remove_entry "$name"
   [ "$PROBLEMS" -eq 0 ]
 }
+
+# A malformed or missing data file must stop everything here, not degrade
+# into whatever each caller does with an empty $(...): list prints only its
+# header, install reports "0 installed" and exits 0 — both look like a clean,
+# uneventful run of an empty catalog rather than a broken one. _table_rows
+# already printed the awk parse error to stderr; this adds the one-line
+# verdict that turns it into a hard failure instead of a silently swallowed
+# status.
+manifest_rows >/dev/null || { printf 'FAIL: %s is unreadable or malformed\n' "$LOADOUT_MANIFEST" >&2; exit 1; }
+deps_rows     >/dev/null || { printf 'FAIL: %s is unreadable or malformed\n' "$LOADOUT_DEPS" >&2; exit 1; }
+
+# --only, --except and --preset are validated the same way --scope already
+# is above: a typo here (e.g. --only grapify) must not vanish into an empty
+# selection that still prints a clean-looking "0 installed" and exits 0.
+case "$OPT_PRESET" in
+  core|full) ;;
+  *) printf -- '--preset must be core or full (got %s; see: scripts/loadout list)\n' "$OPT_PRESET" >&2
+     exit 2 ;;
+esac
+
+_check_known_names() {
+  local flag=$1 list=$2 tok
+  for tok in $(printf '%s' "$list" | tr ',' ' '); do
+    manifest_field "$tok" 1 >/dev/null 2>&1 || {
+      printf 'unknown entry in %s: %s (see: scripts/loadout list)\n' "$flag" "$tok" >&2
+      exit 2
+    }
+  done
+}
+[ -z "$OPT_ONLY" ]   || _check_known_names --only "$OPT_ONLY"
+[ -z "$OPT_EXCEPT" ] || _check_known_names --except "$OPT_EXCEPT"
 
 case "$SUBCOMMAND" in
   doctor) cmd_doctor ;;

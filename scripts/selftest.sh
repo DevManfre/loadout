@@ -79,6 +79,33 @@ EOF
 
 stub_calls() { cat "$STUB_CALLS"; }
 
+# cmd_install's menu branch only runs when stdin is a real TTY; a plain
+# `printf ... | cmd` pipe is never one, so it cannot reach that branch at
+# all. This opens a pty, writes the given keystrokes to its master side and
+# hands the slave to the child as stdin, so the interactive branch actually
+# runs. The child's real stdout/stderr come back through an ordinary pipe —
+# reading the pty master instead would only ever yield the terminal
+# driver's echo of what was typed, never the program's own output.
+run_with_pty() {
+  python3 - "$@" <<'PY'
+import os, pty, subprocess, sys
+keys = sys.argv[1]
+cmd = sys.argv[2:]
+master, slave = pty.openpty()
+p = subprocess.Popen(cmd, stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+os.close(slave)
+os.write(master, keys.encode())
+try:
+    out, _ = p.communicate(timeout=10)
+except subprocess.TimeoutExpired:
+    p.kill()
+    out, _ = p.communicate()
+os.close(master)
+sys.stdout.buffer.write(out)
+sys.exit(p.returncode)
+PY
+}
+
 # --- manifest ------------------------------------------------------------
 . scripts/lib/manifest.sh
 
@@ -154,6 +181,65 @@ done
 
 it "an unknown subcommand exits 2"
 assert_status 2 scripts/loadout frobnicate
+
+# _table_rows drops a malformed row and returns 1, but every caller reads it
+# through $(...) inside a `for`, which discards that status — list would
+# print only the header, install would report "0 installed" and exit 0, and
+# both look like a clean, uneventful run of an empty catalog rather than a
+# broken one. The entrypoint check must turn that into a hard failure before
+# any command runs.
+it "a malformed manifest row hard-fails the whole run, not just that row"
+( fx=$(mktemp -d)
+  printf 'superpowers | plugin | claude-plugins-official | core,full | claude,git | plugin:superpowers | ~800 | 6.3.0\n' > "$fx/manifest"
+  printf 'broken-row-too-few-fields | plugin\n' >> "$fx/manifest"
+  out=$(LOADOUT_MANIFEST=$fx/manifest scripts/loadout list 2>&1)
+  assert_status 1 env LOADOUT_MANIFEST=$fx/manifest scripts/loadout list
+  assert_contains "expected 8 columns, found 2" "$out"
+  assert_contains "FAIL: $fx/manifest is unreadable or malformed" "$out" )
+
+it "a nonexistent manifest path hard-fails the same way"
+( out=$(LOADOUT_MANIFEST=/no/such/loadout.manifest scripts/loadout list 2>&1)
+  assert_status 1 env LOADOUT_MANIFEST=/no/such/loadout.manifest scripts/loadout list
+  assert_contains "missing data file" "$out"
+  assert_contains "unreadable or malformed" "$out" )
+
+# A corrupted manifest can still hold good rows, so this must also be
+# checked ahead of any command that mutates the machine, not only ahead of
+# a read-only one like list.
+it "install also refuses to run on a malformed manifest"
+( stub_dir; stub claude; stub git; stub uv
+  fx=$(mktemp -d)
+  printf 'broken-row-too-few-fields | plugin\n' > "$fx/manifest"
+  assert_status 1 env LOADOUT_MANIFEST=$fx/manifest HOME=$(mktemp -d) scripts/loadout install --yes
+  assert_eq "" "$(stub_calls)" )
+
+# --only, --except and --preset must be validated the same way --scope
+# already is: a typo (the exact one from the review — "grapify" for
+# "graphify") must stop the run with exit 2, not vanish into an empty
+# selection that still prints a clean "0 installed" and exits 0.
+it "an unknown --only name exits 2 instead of a silent empty selection"
+( stub_dir; stub claude; stub git; stub uv
+  out=$(HOME=$(mktemp -d) scripts/loadout install --only grapify --yes 2>&1)
+  assert_status 2 env HOME=$(mktemp -d) scripts/loadout install --only grapify --yes
+  assert_contains "unknown entry in --only: grapify" "$out"
+  assert_contains "scripts/loadout list" "$out"
+  assert_eq "" "$(stub_calls)" )
+
+it "an unknown --except name exits 2"
+( stub_dir; stub claude; stub git; stub uv
+  out=$(HOME=$(mktemp -d) scripts/loadout install --except bogus --yes 2>&1)
+  assert_status 2 env HOME=$(mktemp -d) scripts/loadout install --except bogus --yes
+  assert_contains "unknown entry in --except: bogus" "$out" )
+
+it "an unknown --preset value exits 2"
+( stub_dir; stub claude; stub git; stub uv
+  out=$(HOME=$(mktemp -d) scripts/loadout install --preset bogus --yes 2>&1)
+  assert_status 2 env HOME=$(mktemp -d) scripts/loadout install --preset bogus --yes
+  assert_contains "--preset must be core or full" "$out" )
+
+it "update rejects an unknown --only name the same way install does"
+( stub_dir; stub claude; stub git; stub uv
+  assert_status 2 env HOME=$(mktemp -d) scripts/loadout update --only grapify --yes )
 
 it "doctor reports a blocker with why, fix and docs"
 out=$( stub_dir; absent uv,pipx; stub claude; stub git
@@ -335,6 +421,26 @@ it "install adds a marketplace when the source names one"
   HOME=$(mktemp -d) scripts/loadout install --only caveman --yes >/dev/null 2>&1
   assert_contains "marketplace add JuliusBrussee/caveman" "$(stub_calls)" )
 
+# The old check was `claude plugin marketplace list | grep -q "$market"`:
+# unanchored and unescaped, so a marketplace whose name merely contains
+# "caveman" as a substring (here, "caveman-utils") was enough to make it
+# match, treat the real "caveman" marketplace as already present, and skip
+# the add — after which the plugin install has nothing to install from.
+# --json plus a literal, quoted key match (the same technique
+# entry_installed already uses for plugins) tells "caveman" apart from
+# "caveman-utils".
+it "a same-named substring in another marketplace does not fool the presence check"
+( stub_dir; stub git
+  cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+printf '[{"name": "caveman-utils", "source": "github", "repo": "someone/caveman-utils"}]\n'
+exit 0
+EOF
+  chmod +x "$STUB/claude"
+  HOME=$(mktemp -d) scripts/loadout install --only caveman --yes >/dev/null 2>&1
+  assert_contains "marketplace add JuliusBrussee/caveman" "$(stub_calls)" )
+
 # graphify is a real binary on this machine, so its dependency probe must be
 # faked absent too or resolve_selection sees it as already installed and the
 # python-installer branch below never runs; it is also stubbed so that, once
@@ -376,6 +482,35 @@ it "no TTY and no --yes is a hard stop"
 ( stub_dir; stub claude; stub git
   assert_status 1 env HOME=$(mktemp -d) scripts/loadout install --only superpowers < /dev/null )
 
+# `mapfile -t selection < <(menu_select ...) || note "cancelled"` tests
+# mapfile's own exit status, never menu_select's: command substitution runs
+# menu_select in a subshell, and mapfile itself always "succeeds" even when
+# it reads nothing from a cancelled menu. Pressing q must still be seen as a
+# cancel — reaching the code below it (which creates the asset directory
+# under HOME) would be the bug.
+it "q on the menu cancels, creates nothing under HOME, and mutates nothing"
+( stub_dir; stub claude; stub git; stub uv
+  fake_home=$(mktemp -d)
+  out=$(HOME=$fake_home run_with_pty $'q\n' scripts/loadout install)
+  assert_contains "cancelled" "$out"
+  assert_eq "1" "$([ -e "$fake_home/.claude/loadout" ]; echo $?)"
+  # resolve_selection legitimately probes `claude plugin list --json` (a
+  # read) to build the menu before menu_select is even called; what a
+  # cancel must never do is reach a mutating command afterward.
+  assert_eq "" "$(grep -E 'plugin (install|marketplace add|uninstall)|tool install|pipx install' "$STUB_CALLS")" )
+
+# The menu already priced this exact set before Enter was pressed; that is
+# consent for the set, not a license for install_entry to ask "install?"
+# again for every member of it. Non-menu paths (checked elsewhere) keep
+# their own per-entry confirmation.
+it "Enter on the menu installs the priced set without a second prompt"
+( stub_dir; stub claude; stub git; stub uv
+  fake_home=$(mktemp -d)
+  out=$(HOME=$fake_home run_with_pty $'\n' scripts/loadout install)
+  assert_contains "plugin install superpowers@claude-plugins-official" "$(stub_calls)"
+  assert_contains "plugin install caveman@caveman" "$(stub_calls)"
+  assert_eq "" "$(printf '%s' "$out" | grep 'install?')" )
+
 it "install-all.sh still works as a shim"
 ( stub_dir; stub claude; stub git
   HOME=$(mktemp -d) scripts/install-all.sh --only superpowers --yes >/dev/null 2>&1
@@ -390,7 +525,12 @@ it "loadout's own assets are copied, and never twice"
   mkdir -p "$LOADOUT_ROOT/skills/example-asset"
   printf -- '---\nname: example-asset\ndescription: x\n---\n' > "$LOADOUT_ROOT/skills/example-asset/SKILL.md"
   trap 'rm -rf "$LOADOUT_ROOT/skills/example-asset"' EXIT
-  HOME=$fake_home scripts/loadout install --only nothing --yes >/dev/null 2>&1
+  # --only and --except both name a real entry, on purpose: an unknown name
+  # here (the previous version of this test used "nothing") is now rejected
+  # with exit 2 by loadout's own name validation, so an empty selection has
+  # to come from a legitimate filter instead — selecting superpowers, then
+  # excepting it right back out.
+  HOME=$fake_home scripts/loadout install --only superpowers --except superpowers --yes >/dev/null 2>&1
   assert_eq "0" "$([ -f "$fake_home/.claude/skills/example-asset/SKILL.md" ]; echo $?)" )
 
 # Ordering, not just presence: the earlier test only checked the cost line

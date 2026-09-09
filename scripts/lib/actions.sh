@@ -7,6 +7,13 @@ INSTALLED=0
 SKIPPED=0
 PROBLEMS=0
 
+# Set by cmd_install right after a menu selection is accepted with Enter: the
+# menu already priced this exact set and the user consented to it there, so
+# install_entry must not ask again for each member of that set. Every other
+# path into install_entry (--only, --except, --yes, no TTY) leaves this 0 and
+# keeps its own per-entry confirmation.
+SELECTION_CONFIRMED=0
+
 _ok()   { INSTALLED=$((INSTALLED + 1)); }
 _skip() { note "skip: $*"; SKIPPED=$((SKIPPED + 1)); }
 _fail() { printf '   FAIL: %s\n' "$*" >&2; PROBLEMS=$((PROBLEMS + 1)); }
@@ -18,7 +25,13 @@ install_marketplace() {
   source=$(manifest_field "$name" 3)
   case "$source" in *=*) ;; *) return 0 ;; esac
   market=${source%%=*}; repo=${source#*=}
-  if claude plugin marketplace list 2>/dev/null | grep -q "$market"; then
+  # An unanchored, unescaped substring match here would treat $market as a
+  # regex and match any line that merely mentions it (e.g. another
+  # marketplace's repo path containing the same word), skipping the add and
+  # leaving the plugin install with nothing to install from. --json plus an
+  # exact, literal key match is the same technique entry_installed already
+  # uses for plugins.
+  if claude plugin marketplace list --json 2>/dev/null | grep -Fq "\"name\": \"$market\""; then
     return 0
   fi
   run claude plugin marketplace add "$repo" || _fail "could not add marketplace $repo"
@@ -51,7 +64,11 @@ install_entry() {
   done
 
   if entry_installed "$name"; then _skip "already installed"; return 0; fi
-  confirm "install?" || { _skip "declined"; return 0; }
+  if [ "${SELECTION_CONFIRMED:-0}" -eq 1 ]; then
+    :   # the menu priced this set and the user accepted it there
+  elif ! confirm "install?"; then
+    _skip "declined"; return 0
+  fi
 
   case "$kind" in
     plugin)
