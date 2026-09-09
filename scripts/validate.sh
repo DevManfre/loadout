@@ -155,25 +155,27 @@ fi
 # what it costs. These checks are what make that true rather than aspirational.
 #
 # The cost check compares only the first whitespace-delimited token of
-# cost_session (e.g. '~2,480' out of '~2,480 +60/prompt') against the first
-# number in the README catalog row's OWN cost cell -- not the whole field,
-# and not the whole row. The manifest carries a compact per-call display
-# suffix ('+60/prompt', '+48-105/toolcall') that no README row quotes
-# verbatim, so only the always-on figure is compared; and the comparison is
-# anchored to the cost cell specifically (column 4 of the 5-column catalog
-# row) rather than searched for anywhere in the row, because a per-call
-# figure elsewhere in that same cell (graphify's '+48-105', caveman's '+60')
-# would otherwise satisfy a search for the always-on number by coincidence --
-# e.g. a corrupted '~48' would false-pass against graphify's own
-# '+48-105/toolcall' suffix if the whole row (or the whole cell) were
-# searched instead of reading its leading number. The comparison is
+# cost_session (e.g. '~2,480' out of '~2,480 +60/prompt') against the number
+# the README catalog row's OWN cost cell LEADS WITH -- not the whole field,
+# not the whole row, and not just anywhere in the cell. The manifest carries
+# a compact per-call display suffix ('+60/prompt', '+48-105/toolcall') that
+# no README row quotes verbatim, so only the always-on figure is compared;
+# and the comparison is anchored to the START of the cost cell (column 4 of
+# the 5-column catalog row), because a number anywhere later in that same
+# cell can mean something else entirely -- a per-call figure elsewhere in
+# the cell (graphify's '+48-105', caveman's '+60') would otherwise satisfy a
+# search for the always-on number by coincidence, and a conditional figure
+# later in prose (headroom's cell reads "none in the proxy shape; ~525
+# tokens if you add its MCP server") would let a corrupted 'none' -> '~525'
+# pass by matching the unrelated MCP-server cost instead of the always-on
+# one. Only the figure the cell opens with counts. The comparison is
 # digit-only, so a mirror's localised thousands separator ('~2.480' in
 # Italian vs '~2,480' in English) is not mistaken for drift, while a real
 # change to the number still fails in every language. A cost token with no
-# digits at all ('none') is a word, not a figure, so it is checked against
-# the canonical README.md only -- a mirror is free to translate it, and the
-# existing reachability and parity checks already require the mirror to
-# carry a catalog row for the entry at all.
+# digits at all ('none') is a word, not a figure, so the canonical README.md
+# cell must literally START WITH that word (case-insensitively) -- a mirror
+# is free to translate it, and the existing reachability and parity checks
+# already require the mirror to carry a catalog row for the entry at all.
 manifest_failures=$(LOADOUT_ROOT=$PWD python3 <<'PY'
 import os, re, sys
 
@@ -190,13 +192,13 @@ def table(path, want):
         rows.append(cells)
     return rows
 
-def first_number(text):
-    # The always-on figure is what a cost cell leads with. Take that number
-    # alone, with thousands separators removed, so ~2.480 (Italian) and
-    # ~2,480 (English) both reduce to 2480 while a per-call suffix later in
-    # the cell (+48-105/toolcall, +60/prompt) cannot stand in for it.
-    m = re.search(r'\d[\d.,]*', text)
-    return re.sub(r'\D', '', m.group(0)) if m else ''
+def leading_number(cell):
+    # The always-on figure is what a cost cell LEADS with. Anchoring at the
+    # start matters: headroom's cell reads "none in the proxy shape; ~525
+    # tokens if you add its MCP server", and that 525 is a conditional MCP
+    # cost, not the always-on one. A scan would happily confirm it.
+    m = re.match(r'\s*~?\s*(\d[\d.,]*)', cell)
+    return re.sub(r'\D', '', m.group(1)) if m else ''
 
 def cost_cell(row, path, name):
     # | name | what it does | what you get back | cost | docs |
@@ -225,7 +227,7 @@ for name, kind, source, presets, needs, probe, cost, measured in entries:
     if kind not in ('plugin', 'pypkg'):
         print(f"FAIL: {name}: unknown kind '{kind}'")
     head = cost.split()[0] if cost.split() else ''
-    want = first_number(head)
+    want = re.sub(r'\D', '', head)
     for path, text in texts.items():
         row = [l for l in text.splitlines() if l.strip().startswith('|') and f'| {name} ' in l]
         if not row:
@@ -235,11 +237,11 @@ for name, kind, source, presets, needs, probe, cost, measured in entries:
         if cell is None:
             continue
         if want:
-            if want != first_number(cell):
+            if want != leading_number(cell):
                 print(f"FAIL: {name}: cost '{head}' does not match the {path} catalog row's cost cell '{cell}'")
         elif path == 'README.md':
-            if head not in cell:
-                print(f"FAIL: {name}: cost '{head}' does not appear in the {path} catalog row's cost cell '{cell}'")
+            if not cell.lower().startswith(head.lower()):
+                print(f"FAIL: {name}: cost '{head}' does not lead the {path} catalog row's cost cell '{cell}'")
 
 for token, row in deps.items():
     if row[1] not in ('block', 'warn', 'runtime'):

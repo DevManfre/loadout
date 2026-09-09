@@ -699,6 +699,27 @@ it "a malformed catalog row is reported, not silently accepted"
   cd "$work" && assert_status 1 scripts/validate.sh
   rm -rf "$work" )
 
+# A prior version of the cost check took the first number found anywhere in
+# the cost cell, not the number the cell LEADS with. That false-passed on
+# headroom: its cell reads "none in the proxy shape; ~525 tokens if you add
+# its MCP server", so corrupting the manifest's 'none' to '~525' matched the
+# conditional MCP-server figure instead of catching that the always-on cost
+# had changed. The check now reads only the cell's leading number, so a
+# conditional figure later in the same cell can no longer stand in for it.
+it "a conditional figure later in the cell cannot stand in for the cost"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  sed -i 's/| none  *|/| ~525 |/' "$work/scripts/loadout.manifest"
+  assert_contains '| ~525 |' "$(cat "$work/scripts/loadout.manifest")"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
+it "a cost cell that does not lead with its figure is a defect"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  sed -i 's/| ~800 tokens/| roughly ~800 tokens/' "$work/README.md"
+  assert_contains 'roughly ~800 tokens' "$(cat "$work/README.md")"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
 # --- harness integrity ---------------------------------------------------
 # Runs last, after every production library has been sourced, and proves the
 # counters still work rather than assuming it.
