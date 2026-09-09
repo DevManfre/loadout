@@ -241,6 +241,54 @@ it "status names every runtime gap, not just the last"
   assert_contains "r1" "$out"
   assert_contains "r2" "$out" )
 
+# --- selection -------------------------------------------------------------
+. scripts/lib/ui.sh
+
+it "the default preset is everything installable"
+( stub_dir; stub claude; stub git; stub uv; absent graphify
+  OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT="" LOADOUT_FAKE_PLATFORM=Linux/x86_64
+  export OPT_PRESET OPT_ONLY OPT_EXCEPT LOADOUT_FAKE_PLATFORM
+  assert_eq "superpowers caveman graphify headroom" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
+
+it "core drops the style plugin and the proxy"
+( stub_dir; stub claude; stub git; stub uv; absent graphify
+  OPT_PRESET=core OPT_ONLY="" OPT_EXCEPT=""
+  assert_eq "superpowers graphify" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
+
+it "--except removes an entry"
+( stub_dir; stub claude; stub git; stub uv
+  OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=caveman
+  assert_eq "" "$(resolve_selection | grep -x caveman)" )
+
+it "--only is the same set a menu toggled to those entries would give"
+( stub_dir; stub claude; stub git; stub uv; absent graphify
+  OPT_PRESET=full OPT_EXCEPT="" OPT_ONLY="graphify,headroom"
+  assert_eq "graphify headroom" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
+
+it "a blocked entry is never selected"
+( stub_dir; absent uv,pipx; stub claude; stub git
+  OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
+  assert_eq "superpowers caveman" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
+
+it "an already-installed entry is not selected again"
+( stub_dir; stub claude; stub git; stub uv; stub graphify
+  OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
+  assert_eq "" "$(resolve_selection | grep -x graphify)" )
+
+it "the menu obeys a toggle then Enter"
+( stub_dir; stub claude; stub git; stub uv; absent graphify
+  OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
+  assert_eq "superpowers graphify headroom" \
+    "$(printf '2\n\n' | menu_select $(resolve_selection) | tr '\n' ' ' | sed 's/ $//')" )
+
+it "the menu can clear and rebuild a selection"
+( stub_dir; stub claude; stub git; stub uv
+  assert_eq "caveman" "$(printf 'n\n2\n\n' | menu_select $(resolve_selection) | tr '\n' ' ' | sed 's/ $//')" )
+
+it "the total names both budgets"
+( stub_dir
+  assert_contains "per tool call" "$(selection_total superpowers graphify)" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

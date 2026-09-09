@@ -38,3 +38,94 @@ confirm() {
   read -r reply
   case "$reply" in [yY]|[yY][eE][sS]) return 0 ;; *) return 1 ;; esac
 }
+
+_in_list() {
+  case ",$2," in *",$1,"*) return 0 ;; esac
+  return 1
+}
+
+# The set the menu opens with, and the set the flags produce on their own.
+# Both paths run through here, so a --only run and a menu session that toggled
+# the same entries cannot disagree.
+resolve_selection() {
+  local name
+  for name in $(manifest_names); do
+    [ -z "${OPT_ONLY:-}" ] || { _in_list "$name" "$OPT_ONLY" || continue; }
+    [ -z "${OPT_EXCEPT:-}" ] || { _in_list "$name" "$OPT_EXCEPT" && continue; }
+    [ -n "${OPT_ONLY:-}" ] || manifest_in_preset "$name" "${OPT_PRESET:-full}" || continue
+    [ -z "$(entry_deps "$name" block)" ] || continue
+    entry_installed "$name" && continue
+    printf '%s\n' "$name"
+  done
+}
+
+selection_total() {
+  local name per_session="" per_call=""
+  for name in "$@"; do
+    per_session="$per_session $(manifest_field "$name" 7)"
+    case "$(manifest_field "$name" 7)" in *toolcall*) per_call=" plus a per tool call charge" ;; esac
+  done
+  printf 'selected %d · always-on:%s%s\n' "$#" "$per_session" "$per_call"
+}
+
+# A numbered toggle list, redrawn after every keystroke line. No raw mode, no
+# cursor movement: this has to work over ssh, in WSL and under a pipe.
+menu_select() {
+  local -a all=("$@") chosen=()
+  local i name reply
+  for name in "${all[@]}"; do chosen+=("$name"); done
+
+  # Blocked entries are shown but cannot be chosen; that is the whole point of
+  # showing them.
+  local -a blocked=()
+  for name in $(manifest_names); do
+    [ -z "$(entry_deps "$name" block)" ] || blocked+=("$name")
+  done
+
+  while :; do
+    printf '\n  #  entry        cost/session           status\n' >&2
+    i=0
+    for name in "${all[@]}"; do
+      i=$((i + 1))
+      if printf '%s\n' "${chosen[@]}" | grep -qx "$name"; then
+        printf '  %d [x] %-12s %-22s ready\n' "$i" "$name" "$(manifest_field "$name" 7)" >&2
+      else
+        printf '  %d [ ] %-12s %-22s ready\n' "$i" "$name" "$(manifest_field "$name" 7)" >&2
+      fi
+    done
+    for name in "${blocked[@]}"; do
+      printf '    [!] %-12s %-22s BLOCKED: needs %s\n' \
+        "$name" "$(manifest_field "$name" 7)" "$(entry_deps "$name" block | tr '\n' ' ')" >&2
+    done
+    printf '\ntoggle 1-%d · a=all · n=none · d <n>=why · Enter=install %d · q=quit\n> ' \
+      "${#all[@]}" "${#chosen[@]}" >&2
+
+    read -r reply || reply=""
+    case "$reply" in
+      "") break ;;
+      q|Q) return 1 ;;
+      a|A) chosen=("${all[@]}") ;;
+      n|N) chosen=() ;;
+      d\ *)
+        name=${all[$(( ${reply#d } - 1 ))]}
+        explain_dep "$(entry_deps "$name" block | head -1)" "$name" >&2 ;;
+      *[!0-9]*) printf '   not a number: %s\n' "$reply" >&2 ;;
+      *)
+        name=${all[$((reply - 1))]:-}
+        [ -n "$name" ] || { printf '   no entry %s\n' "$reply" >&2; continue; }
+        if printf '%s\n' "${chosen[@]:-}" | grep -qx "$name"; then
+          local -a keep=()
+          for i in "${chosen[@]}"; do [ "$i" = "$name" ] || keep+=("$i"); done
+          chosen=("${keep[@]:-}")
+        else
+          chosen+=("$name")
+        fi ;;
+    esac
+  done
+
+  # Print in manifest order, not toggle order, so the install sequence is stable.
+  for name in "${all[@]}"; do
+    printf '%s\n' "${chosen[@]:-}" | grep -qx "$name" && printf '%s\n' "$name"
+  done
+  return 0
+}
