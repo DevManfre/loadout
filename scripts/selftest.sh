@@ -9,26 +9,34 @@ cd "$(dirname "$0")/.."
 LOADOUT_ROOT=$PWD
 export LOADOUT_ROOT
 
-pass=0
-fail=0
+# Counters live in files, not variables: most tests run inside ( ... ) to scope
+# a uname override or the absent seam, and a variable incremented in a subshell
+# dies with it — the suite would report success while swallowing a real failure.
+RESULTS=$(mktemp -d)
+export RESULTS
+trap 'rm -rf "$RESULTS"' EXIT
+: > "$RESULTS/pass"
+: > "$RESULTS/fail"
 current=""
+
+_pass() { printf 'x' >> "$RESULTS/pass"; }
 
 it() { current=$1; }
 
 _fail() {
   printf 'FAIL: %s\n      %s\n' "$current" "$1" >&2
-  fail=$((fail + 1))
+  printf 'x' >> "$RESULTS/fail"
 }
 
 assert_eq() {
-  if [ "$1" = "$2" ]; then pass=$((pass + 1)); else
+  if [ "$1" = "$2" ]; then _pass; else
     _fail "expected [$1], got [$2]"
   fi
 }
 
 assert_contains() {
   case "$2" in
-    *"$1"*) pass=$((pass + 1)) ;;
+    *"$1"*) _pass ;;
     *) _fail "expected to find [$1] in [$2]" ;;
   esac
 }
@@ -37,7 +45,7 @@ assert_status() {
   local want=$1; shift
   "$@" >/dev/null 2>&1
   local got=$?
-  if [ "$got" -eq "$want" ]; then pass=$((pass + 1)); else
+  if [ "$got" -eq "$want" ]; then _pass; else
     _fail "expected exit $want, got $got from: $*"
   fi
 }
@@ -130,5 +138,7 @@ it "an unset variable is a runtime gap, not a blocker"
   uname() { case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac; }
   assert_eq "anthropic_base_url" "$(entry_deps headroom runtime)" )
 
+pass=$(wc -c < "$RESULTS/pass")
+fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
