@@ -128,57 +128,37 @@ _record_asset() {
 
 _asset_sum() { find "${1%/}" -type f -exec cat {} + 2>/dev/null | sha256sum | cut -d' ' -f1; }
 
-# What the upstream would give us if we updated now. LOADOUT_FAKE_AVAILABLE is
-# a test seam; nothing else sets it.
-available_version() {
-  local name=$1 kind
-  [ -z "${LOADOUT_FAKE_AVAILABLE:-}" ] || { printf '%s' "$LOADOUT_FAKE_AVAILABLE"; return 0; }
-  kind=$(manifest_field "$name" 2)
-  case "$kind" in
-    plugin)
-      claude plugin marketplace list --json 2>/dev/null |
-        grep -o "\"$name[^\"]*\"" | head -1 | tr -d '"' ;;
-    pypkg) printf '%s' "unknown" ;;
-  esac
-}
-
-# The catalog measures a cost against a pin. Moving to a pin it never measured
-# means the price the user agreed to no longer describes what they are getting,
-# and caveman is the documented case: ~780 tokens on one pin, ~2,480 on the
-# next. So say it, and ask.
+# The catalog prices an entry at a specific pin. An update moves to whatever
+# upstream publishes now, and nothing available locally says what that will be:
+# `claude plugin marketplace list --json` carries no version field, and a
+# package index is not consulted until the upgrade runs. So the gate reports
+# what IS known — the pin on disk, and the pin the catalog measured, with its
+# price — and asks. Inventing a target version, or waiving the gate when we
+# cannot find one, both defeat the promise this gate exists to keep.
 pin_gate() {
-  local name=$1 available=$2 measured
+  local name=$1 measured installed
   measured=$(manifest_field "$name" 8)
-  [ -n "$available" ] || return 0
-  [ "$available" != "$measured" ] || return 0
+  installed=$(entry_version "$name")
 
-  # A package index does not tell us the target version until the upgrade runs,
-  # so say what is actually known and ask anyway. Treating "unknown" as consent
-  # would exempt half the catalog from the one promise this gate exists to keep.
-  if [ "$available" = unknown ]; then
-    printf '   installed: %s (measured: %s)\n' "$(entry_version "$name")" "$measured"
-    printf '   available: unknown — the package index decides that when it runs\n'
-    printf '   ! the catalog measured %s; an upgrade may land on any later version\n' "$measured"
-    confirm "upgrade anyway?"
-    return
+  printf '   installed: %s\n' "$installed"
+  printf '   measured:  %s — the catalog prices this entry at %s on that pin\n' \
+    "$measured" "$(manifest_field "$name" 7)"
+  if [ "$installed" != "$measured" ]; then
+    printf '   ! you are already off the measured pin, so the catalog price does not describe what you have\n'
   fi
-
-  printf '   installed: %s (measured: %s)\n' "$(entry_version "$name")" "$(manifest_field "$name" 7)"
-  printf '   available: %s  (NOT measured in this catalog)\n' "$available"
-  printf '   ! the catalog price does not describe the version you are about to get\n'
+  printf '   ! an update moves to whatever upstream publishes now, which this catalog has not measured\n'
   confirm "update anyway?"
 }
 
 update_entry() {
-  local name=$1 kind source available
+  local name=$1 kind source
   kind=$(manifest_field "$name" 2)
   source=$(manifest_field "$name" 3)
 
   say "$name"
   if ! entry_installed "$name"; then _skip "not installed"; return 0; fi
 
-  available=$(available_version "$name")
-  pin_gate "$name" "$available" || { _skip "declined"; return 0; }
+  pin_gate "$name" || { _skip "declined"; return 0; }
 
   case "$kind" in
     plugin)

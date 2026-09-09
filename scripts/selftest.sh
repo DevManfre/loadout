@@ -442,7 +442,7 @@ EOF
   assert_contains "marketplace update caveman" "$(stub_calls)"
   assert_contains "plugin update caveman" "$(stub_calls)" )
 
-it "the pin gate fires when the available pin was never measured"
+it "the pin gate warns that an update goes to an unmeasured version"
 out=$( stub_dir
        cat > "$STUB/claude" <<'EOF'
 #!/usr/bin/env bash
@@ -450,26 +450,58 @@ out=$( stub_dir
 exit 0
 EOF
        chmod +x "$STUB/claude"
-       LOADOUT_FAKE_AVAILABLE=v9.9.9 HOME=$(mktemp -d) \
+       HOME=$(mktemp -d) \
        scripts/loadout update --only caveman --yes 2>&1 )
-assert_contains "NOT measured in this catalog" "$out"
+assert_contains "has not measured" "$out"
+assert_contains "installed:" "$out"
 
-it "the pin gate stays quiet when the pins agree"
-out=$( stub_dir
+it "an entry already on the measured pin gets no drift line"
+out=$( fake_home=$(mktemp -d)
+       mkdir -p "$fake_home/.claude/plugins/cache/caveman/caveman/v2.6.0"
+       stub_dir
        cat > "$STUB/claude" <<'EOF'
 #!/usr/bin/env bash
 [ "$1 $2" = "plugin list" ] && echo '[{"id": "caveman@caveman"}]'
 exit 0
 EOF
        chmod +x "$STUB/claude"
-       LOADOUT_FAKE_AVAILABLE=v2.6.0 HOME=$(mktemp -d) \
-       scripts/loadout update --only caveman --yes 2>&1 )
-assert_eq "" "$(printf '%s' "$out" | grep 'NOT measured')"
+       HOME=$fake_home scripts/loadout update --only caveman --yes 2>&1 )
+assert_eq "" "$(printf '%s' "$out" | grep 'already off the measured pin')"
+assert_contains "an update moves to whatever upstream publishes now" "$out"
 
 it "the pin gate refuses without --yes and no TTY"
 ( stub_dir; stub claude
   assert_status 1 env LOADOUT_FAKE_AVAILABLE=v9.9.9 HOME=$(mktemp -d) \
     scripts/loadout update --only caveman < /dev/null )
+
+it "no entry escapes the gate for want of a version"
+( stub_dir
+  cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "superpowers@claude-plugins-official"}]'
+exit 0
+EOF
+  chmod +x "$STUB/claude"
+  out=$(HOME=$(mktemp -d) scripts/loadout update --only superpowers --yes 2>&1)
+  assert_contains "has not measured" "$out" )
+
+it "every installed entry is gated, not just the drifted ones"
+( stub_dir; absent uv,graphify,headroom
+  cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "superpowers@claude-plugins-official"}, {"id": "caveman@caveman"}]'
+exit 0
+EOF
+  chmod +x "$STUB/claude"
+  out=$(HOME=$(mktemp -d) scripts/loadout update --yes 2>&1)
+  assert_eq "2" "$(printf '%s\n' "$out" | grep -c 'an update moves to whatever upstream')" )
+
+it "no gate is shown for an entry that is not installed"
+( stub_dir; absent graphify,headroom; stub claude
+  out=$(HOME=$(mktemp -d) scripts/loadout update --yes 2>&1)
+  assert_eq "" "$(printf '%s' "$out" | grep 'an update moves to whatever upstream')" )
 
 it "update upgrades a python entry with the manager that is present"
 ( stub_dir; absent uv; stub claude; stub pipx; stub graphify
@@ -479,7 +511,7 @@ it "update upgrades a python entry with the manager that is present"
 it "a package update still faces the pin gate"
 ( stub_dir; absent uv; stub claude; stub pipx; stub graphify
   out=$(HOME=$(mktemp -d) scripts/loadout update --only graphify --yes 2>&1)
-  assert_contains "the catalog measured 0.9.56" "$out" )
+  assert_contains "the catalog prices this entry at ~340" "$out" )
 
 it "a failed package upgrade is not counted as updated"
 ( stub_dir; absent uv; stub claude; stub graphify; stub pipx 1
