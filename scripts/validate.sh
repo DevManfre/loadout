@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Structural validation for the loadout repo.
-# There is no build and no test runner here: the assets and their index are
-# the product, so "valid" means the index parses, every path it names exists,
-# nothing is listed twice, every doc link resolves, README language mirrors
-# stay in parity, and every integration is reachable via the plugin index or
-# the README catalog.
+# There is no build and no test runner here: the guide and its assets are the
+# product, so "valid" means every shipped asset has parsable frontmatter,
+# every integration documents itself, every doc link resolves, README language
+# mirrors stay in parity, and every integration is reachable from the README
+# catalog.
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
@@ -14,79 +14,6 @@ fail() { echo "FAIL: $*" >&2; fails=$((fails + 1)); }
 if ! command -v python3 >/dev/null 2>&1; then
   echo "FAIL: python3 is required for the index and doc checks; everything else was skipped" >&2
   exit 1
-fi
-
-MARKETPLACE=.claude-plugin/marketplace.json
-
-if [ ! -f "$MARKETPLACE" ]; then
-  fail "$MARKETPLACE is missing"
-else
-  python3 - "$MARKETPLACE" <<'PY'
-import json, os, sys
-
-path = sys.argv[1]
-fails = []
-
-try:
-    with open(path) as fh:
-        data = json.load(fh)
-except json.JSONDecodeError as exc:
-    print(f"FAIL: {path} does not parse: {exc}", file=sys.stderr)
-    raise SystemExit(1)
-
-if not isinstance(data, dict):
-    print(f"FAIL: {path}: top level must be a JSON object", file=sys.stderr)
-    raise SystemExit(1)
-
-plugins = data.get("plugins")
-if not isinstance(plugins, list) or not plugins:
-    fails.append(f"{path} has no plugins array")
-    plugins = []
-
-ALLOWED_KINDS = {"url", "git-subdir"}
-seen = {}
-
-for i, plugin in enumerate(plugins):
-    if not isinstance(plugin, dict):
-        fails.append(f"entry {i}: plugin entry is not an object")
-        continue
-
-    label = plugin.get("name") or f"entry {i}"
-    for key in ("name", "description"):
-        if not plugin.get(key):
-            fails.append(f"{label}: missing or empty '{key}'")
-
-    name = plugin.get("name")
-    if name:
-        if name in seen:
-            fails.append(f"{name}: listed twice (entries {seen[name]} and {i})")
-        else:
-            seen[name] = i
-
-    source = plugin.get("source")
-    if source is None:
-        fails.append(f"{label}: missing 'source'")
-    elif isinstance(source, str):
-        if not os.path.isdir(source):
-            fails.append(f"{label}: local source '{source}' does not resolve")
-    elif isinstance(source, dict):
-        kind = source.get("source")
-        if kind in ALLOWED_KINDS:
-            if not source.get("url"):
-                fails.append(f"{label}: source kind '{kind}' without a url")
-        elif isinstance(kind, str) and kind.startswith("."):
-            if not os.path.isdir(kind):
-                fails.append(f"{label}: local source '{kind}' does not resolve")
-        else:
-            fails.append(f"{label}: source kind '{kind}' is not allowed")
-    else:
-        fails.append(f"{label}: 'source' is neither a string nor an object")
-
-for line in fails:
-    print(f"FAIL: {line}", file=sys.stderr)
-raise SystemExit(1 if fails else 0)
-PY
-  [ $? -ne 0 ] && fails=$((fails + 1))
 fi
 
 # Frontmatter on shipped skills and agents.
@@ -195,25 +122,11 @@ if [ -n "$parity_failures" ]; then
   fails=$((fails + parity_fails))
 fi
 
-# Every integrations/<name> directory must be reachable via marketplace.json
-# or the root README catalog, and every skills/agents/workflows/integrations
-# path mentioned in a root README must resolve on disk.
+# Every integrations/<name> directory must be reachable from the root README
+# catalog, and every skills/agents/workflows/integrations path mentioned in a
+# root README must resolve on disk.
 index_failures=$(python3 <<'PY'
-import glob, json, os, re
-
-plugin_names = set()
-try:
-    with open('.claude-plugin/marketplace.json', encoding='utf-8') as fh:
-        data = json.load(fh)
-except (OSError, json.JSONDecodeError):
-    data = None
-
-if isinstance(data, dict):
-    plugins = data.get('plugins')
-    if isinstance(plugins, list):
-        for p in plugins:
-            if isinstance(p, dict) and p.get('name'):
-                plugin_names.add(p['name'])
+import glob, os, re
 
 readme = ''
 if os.path.isfile('README.md'):
@@ -222,9 +135,8 @@ if os.path.isfile('README.md'):
 
 for d in sorted(glob.glob('integrations/*/')):
     name = d.rstrip('/').split('/')[-1]
-    referenced = name in plugin_names or f'integrations/{name}' in readme
-    if not referenced:
-        print(f"FAIL: integrations/{name} is not reachable via {'.claude-plugin/marketplace.json'} or the README.md catalog")
+    if f'integrations/{name}' not in readme:
+        print(f"FAIL: integrations/{name} is not reachable from the README.md catalog")
 
 for m in re.finditer(r'(?:skills|agents|workflows|integrations)/[A-Za-z0-9._/-]+', readme):
     path = m.group(0).rstrip('.,)')
