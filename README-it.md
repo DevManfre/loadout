@@ -2,79 +2,68 @@
 
 [English](README.md) · [Italiano](README-it.md)
 
-Loadout — un meta repository: un toolkit centralizzato per potenziare gli agenti AI di coding (per ora Claude Code). Nessun codice applicativo, solo skill curate, documentate e pronte da installare, sub-agent specializzati, workflow e integrazioni di terze parti che ottimizzano il consumo di token e l'interazione con il modello.
+Una guida per impostare al meglio il proprio Claude Code. Non un plugin, non un
+framework: un insieme curato di skill, sub-agent, workflow e integrazioni di terze
+parti, ognuna documentata con il contesto che costa davvero — misurato su un
+repository reale, non copiato dal README upstream. Lo script di installazione mette
+in piedi l'insieme completo in un blocco solo, perché un loadout è qualcosa che si
+porta interamente, non una lista della spesa da cui pescare un pezzo alla volta.
+
+Qui non c'è nulla di vendorizzato. Ogni asset si installa dalla sua fonte upstream,
+quindi mantieni gli aggiornamenti upstream e non perdi niente se leggi la guida
+invece di adottarla.
 
 ## Installazione
 
-Aggiungi il marketplace una volta sola:
+Clona il repository ed esegui un solo script:
 
-```
-/plugin marketplace add DevManfre/loadout
-```
-
-Poi installa qualsiasi voce del catalogo per nome.
-
-### Un singolo asset
-
-```
-/plugin install superpowers@loadout
-```
-
-Valutalo prima di adottarlo — questo comando stampa l'inventario dei componenti della
-voce e il suo costo in token previsto:
-
-```
-claude plugin details superpowers
-```
-
-Limitalo a un singolo repository invece che a tutto il tuo account con `--scope`
-(`user` è il default, `project` scrive nel repository, `local` resta privato):
-
-```
-claude plugin install superpowers@loadout --scope project
-```
-
-### Tutto quanto
-
-Nessun comando installa un marketplace intero, ed è voluto: il costo è per asset,
-quindi lo paghi una chiamata deliberata alla volta.
-
-```
-claude plugin install loadout@loadout
-claude plugin install superpowers@loadout
-```
-
-Vuoi comunque tutto loadout in un blocco solo? `scripts/install-all.sh` concatena entrambi
-i percorsi di installazione — l'indice dei plugin e i binari di terze parti che si
-installano da sé — e stampa comunque il costo in token sempre attivo di ogni asset,
-chiedendo conferma prima di pagarlo:
-
-```
+```bash
+git clone https://github.com/DevManfre/loadout.git
+cd loadout
 scripts/install-all.sh
 ```
 
-È idempotente: un marketplace già aggiunto, un plugin o un binario già installato vengono
-segnalati e saltati, quindi rieseguirlo copre solo quello che manca. Guarda cosa farebbe
-senza modificare nulla con `--dry-run`, accetta in anticipo tutti i costi stampati con
-`--yes`, limitalo a un singolo repository con `--scope project`, e lascia fuori il code
-graph con `--skip-graphify`.
+Lo script copre ogni percorso di installazione del catalogo — la CLI dei plugin di
+Claude Code per le voci plugin, un package manager per i binari di terze parti che non
+possono essere distribuiti come plugin, e una semplice copia per gli asset di loadout.
+Non nasconde mai il prezzo: ogni passo stampa prima il suo costo in token sempre
+attivo e chiede conferma prima di pagarlo.
+
+È idempotente. Un plugin, un binario o un asset già installato viene segnalato e
+saltato, quindi rieseguirlo copre solo quello che manca.
+
+| Opzione | Cosa fa |
+|---|---|
+| `--dry-run` | Stampa ogni passo e ogni costo, senza modificare nulla |
+| `--yes` | Accetta in anticipo tutti i costi stampati (obbligatoria senza TTY) |
+| `--scope project` | Installa nel repository corrente invece che nel tuo profilo utente |
+| `--skip-graphify` | Lascia fuori il code graph |
+
+## Disinstallazione
 
 Hai installato qualcosa che si rivela troppo pesante? Toglilo dal contesto senza
 disinstallarlo:
 
-```
+```bash
 /plugin disable superpowers
 ```
 
-### Cosa copre il comando
+## Come si legge una pagina
 
-Lo stesso comando copre ogni tipo di asset — le skill e i sub-agent di loadout,
-un plugin di terze parti curato, o un server MCP. I binari di terze parti sono la sola
-eccezione: un plugin non può eseguire un package manager, quindi quelli si installano da
-sé — `graphify` è uno di questi, e i comandi stanno nella sua guida. Una voce portata
-solo come documentazione, come `superpowers`, si legge invece di installarla tramite
-loadout — il suo valore sta nella colonna Documentazione del catalogo, non nel comando
-di installazione.
+Ogni voce del catalogo ha la sua guida, e tutte rispondono alle stesse domande nello
+stesso ordine:
+
+- **Upstream, autore, licenza, versione ispezionata** — cosa stai installando davvero.
+- **Economia dei token** — divisa in costo sempre attivo, costo per chiamata di tool e
+  costo su richiesta, con le dimensioni misurate sulla versione ispezionata.
+- **Verdetto, per singola skill o per singolo comando** — tenere, situazionale o
+  saltare, con la motivazione.
+- **Interazione con il resto di loadout** — cosa si compone e cosa si sovrappone.
+- **Trappole** — quello che la documentazione upstream non ti dice.
+
+L'economia dei token è il senso di tutto l'esercizio. Un asset che costa più contesto
+di quanto ne risparmi non appartiene a un loadout, per quanto bello sembri nel suo
+README.
 
 ## Catalogo
 
@@ -84,3 +73,32 @@ di installazione.
 |---|---|---|---|
 | superpowers | Skill di processo: gate di brainstorming, TDD red/green, debugging sistematico, sviluppo guidato da subagent, creazione di skill | ~800 token per avvio sessione, `/clear` e compaction | [guida](integrations/superpowers/README-it.md) |
 | graphify | Grafo di codice locale via tree-sitter: `explain` di un simbolo, `path` tra due, interrogazione del grafo invece del grep | ~340 token per sessione, più ~48–105 per lettura o grep finché esiste un grafo | [guida](integrations/graphify/README-it.md) |
+
+### Asset propri
+
+Ancora nessuno. `skills/`, `agents/` e `workflows/` sono la loro sede, e lo stesso
+script di installazione li copia al loro posto appena arrivano.
+
+## Struttura
+
+```text
+skills/<name>/SKILL.md          loadout's own skills
+agents/<name>.md                loadout's own sub-agent definitions
+workflows/<name>.md             loadout's own workflow scripts and recipes
+integrations/<name>/            third-party guides (plugins, binaries, MCP servers)
+scripts/install-all.sh          one-block install of the whole loadout
+scripts/validate.sh             structural validation
+docs/                           longer-form guides
+```
+
+Non c'è codice applicativo e non c'è build. La validazione è strutturale — ogni
+percorso nominato dal catalogo si risolve, ogni asset è documentato, e i mirror di
+lingua restano in parità:
+
+```bash
+scripts/validate.sh
+```
+
+## Licenza
+
+MIT. Vedi [LICENSE](LICENSE).
