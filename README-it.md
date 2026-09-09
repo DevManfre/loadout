@@ -69,10 +69,10 @@ README.
 
 ### Integrazioni
 
-| Nome | Cosa fa | Costo sempre attivo | Documentazione |
-|---|---|---|---|
-| superpowers | Skill di processo: gate di brainstorming, TDD red/green, debugging sistematico, sviluppo guidato da subagent, creazione di skill | ~800 token per avvio sessione, `/clear` e compaction | [guida](integrations/superpowers/README-it.md) |
-| graphify | Grafo di codice locale via tree-sitter: `explain` di un simbolo, `path` tra due, interrogazione del grafo invece del grep | ~340 token per sessione, più ~48–105 per lettura o grep finché esiste un grafo | [guida](integrations/graphify/README-it.md) |
+| Nome | Cosa fa | Cosa ti restituisce | Costo sempre attivo | Documentazione |
+|---|---|---|---|---|
+| superpowers | Skill di processo: gate di brainstorming, TDD red/green, debugging sistematico, sviluppo guidato da subagent, creazione di skill | Elimina interi giri di implementazione buttati — niente viene costruito prima che tu approvi il design, niente viene dichiarato finito senza prove. Il più grosso spreco di token è un agente che costruisce bene la cosa sbagliata | ~800 token per avvio sessione, `/clear` e compaction | [guida](integrations/superpowers/README-it.md) |
+| graphify | Grafo di codice locale via tree-sitter: `explain` di un simbolo, `path` tra due, interrogazione del grafo invece del grep | Un `explain` risponde a quello che altrimenti costa una spazzata di grep più qualche lettura di file intero, e `graphify explain` / `graphify path` girano come normali comandi di shell — nessun corpo di skill caricato. Il grafo si costruisce in locale, 0 crediti LLM sul codice | ~340 token per sessione, più ~48–105 per lettura o grep finché esiste un grafo | [guida](integrations/graphify/README-it.md) |
 
 ### Asset propri
 

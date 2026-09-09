@@ -65,10 +65,10 @@ than it saves does not belong in a loadout, however good it looks in its own REA
 
 ### Integrations
 
-| Name | What it does | Always-on cost | Docs |
-|---|---|---|---|
-| superpowers | Process skills: brainstorming gate, red/green TDD, systematic debugging, subagent-driven development, skill authoring | ~800 tokens per session start, `/clear` and compaction | [guide](integrations/superpowers/README.md) |
-| graphify | Local tree-sitter code graph: `explain` a symbol, trace a `path` between two, query the graph instead of grepping | ~340 tokens per session, plus ~48–105 per read or grep while a graph exists | [guide](integrations/graphify/README.md) |
+| Name | What it does | What you get back | Always-on cost | Docs |
+|---|---|---|---|---|
+| superpowers | Process skills: brainstorming gate, red/green TDD, systematic debugging, subagent-driven development, skill authoring | Kills whole wasted implementation runs — nothing gets built before you approve the design, nothing is called done without evidence. The single largest token sink is an agent building the wrong thing well | ~800 tokens per session start, `/clear` and compaction | [guide](integrations/superpowers/README.md) |
+| graphify | Local tree-sitter code graph: `explain` a symbol, trace a `path` between two, query the graph instead of grepping | One `explain` answers what would otherwise cost a grep sweep plus a few full file reads, and `graphify explain` / `graphify path` run as plain shell commands — zero skill body loaded. Graph builds locally, 0 LLM credits on code | ~340 tokens per session, plus ~48–105 per read or grep while a graph exists | [guide](integrations/graphify/README.md) |
 
 ### Own assets
 
