@@ -560,6 +560,40 @@ it "a recorded, untouched asset is still updated"
   HOME=$fake LOADOUT_STATE=$state scripts/loadout update --yes >/dev/null 2>&1
   assert_eq "v2" "$(cat "$fake/.claude/skills/example-asset/SKILL.md")" )
 
+# --- remove --------------------------------------------------------------
+it "remove needs an entry name"
+assert_status 2 scripts/loadout remove
+
+it "remove rejects an unknown entry"
+assert_status 2 scripts/loadout remove nosuchentry
+
+it "remove uninstalls a plugin"
+( stub_dir
+  cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "caveman@caveman"}]'
+exit 0
+EOF
+  chmod +x "$STUB/claude"
+  HOME=$(mktemp -d) scripts/loadout remove caveman --yes >/dev/null 2>&1
+  assert_contains "plugin uninstall caveman" "$(stub_calls)" )
+
+it "remove uninstalls a python entry"
+( stub_dir; stub claude; stub uv; stub graphify
+  HOME=$(mktemp -d) scripts/loadout remove graphify --yes >/dev/null 2>&1
+  assert_contains "uv tool uninstall graphifyy" "$(stub_calls)" )
+
+it "remove says so when nothing is installed"
+out=$( stub_dir; stub claude
+       HOME=$(mktemp -d) scripts/loadout remove caveman --yes 2>&1 )
+assert_contains "not installed" "$out"
+
+it "remove mentions the cheaper alternative"
+out=$( stub_dir; stub claude
+       HOME=$(mktemp -d) scripts/loadout remove caveman --yes 2>&1 )
+assert_contains "plugin disable" "$out"
+
 # --- harness integrity ---------------------------------------------------
 # Runs last, after every production library has been sourced, and proves the
 # counters still work rather than assuming it.

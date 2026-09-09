@@ -224,3 +224,27 @@ update_own_assets() {
     else _fail "could not update $base"; fi
   done
 }
+
+remove_entry() {
+  local name=$1 kind source
+  kind=$(manifest_field "$name" 2)
+  source=$(manifest_field "$name" 3)
+
+  say "$name"
+  note "uninstalling drops it from disk; '/plugin disable $name' only drops it from context"
+  if ! entry_installed "$name"; then _skip "not installed"; return 0; fi
+  confirm "uninstall $name?" || { _skip "declined"; return 0; }
+
+  case "$kind" in
+    plugin)
+      if run claude plugin uninstall "$name"; then _ok
+      else _fail "claude plugin uninstall $name failed"; fi ;;
+    pypkg)
+      case "$(_python_installer)" in
+        uv)   run uv tool uninstall "${source%%\[*}" || _fail "uv tool uninstall failed" ;;
+        pipx) run pipx uninstall "${source%%\[*}" || _fail "pipx uninstall failed" ;;
+        *)    _fail "no python installer on PATH"; return 0 ;;
+      esac
+      _ok ;;
+  esac
+}

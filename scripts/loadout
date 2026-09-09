@@ -208,6 +208,15 @@ cmd_update() {
   [ "$PROBLEMS" -eq 0 ]
 }
 
+cmd_remove() {
+  local name=${ARGS%% *}
+  [ -n "$name" ] || { printf 'remove needs an entry name\n' >&2; return 2; }
+  manifest_field "$name" 1 >/dev/null 2>&1 || {
+    printf 'unknown entry: %s (see: scripts/loadout list)\n' "$name" >&2; return 2; }
+  remove_entry "$name"
+  [ "$PROBLEMS" -eq 0 ]
+}
+
 case "$SUBCOMMAND" in
   doctor) cmd_doctor ;;
   ""|help) usage; exit 0 ;;
@@ -215,7 +224,6 @@ case "$SUBCOMMAND" in
   status) cmd_status ;;
   install) cmd_install ;;
   update) cmd_update ;;
-  remove)
-    printf 'not implemented yet: %s\n' "$SUBCOMMAND" >&2; exit 3 ;;
+  remove) cmd_remove ;;
   *) printf 'unknown command: %s\n' "$SUBCOMMAND" >&2; usage >&2; exit 2 ;;
 esac
