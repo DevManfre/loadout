@@ -185,13 +185,37 @@ cmd_install() {
   [ "$PROBLEMS" -eq 0 ]
 }
 
+cmd_update() {
+  local name asset_root
+
+  # A hard stop, not a per-entry skip: without a TTY to ask on and without
+  # --yes to accept an unmeasured pin, there is no way to confirm a single
+  # mutation, so the whole command refuses rather than silently skipping its
+  # way to a quiet, successful-looking no-op.
+  if [ "$OPT_YES" -ne 1 ] && [ ! -t 0 ]; then
+    printf '   FAIL: no TTY to confirm on; re-run with --yes to accept the printed costs\n' >&2
+    return 1
+  fi
+
+  for name in $(manifest_names); do
+    [ -z "$OPT_ONLY" ] || _in_list "$name" "$OPT_ONLY" || continue
+    [ -z "$OPT_EXCEPT" ] || ! _in_list "$name" "$OPT_EXCEPT" || continue
+    update_entry "$name"
+  done
+  if [ "$OPT_SCOPE" = user ]; then asset_root=$HOME/.claude; else asset_root=$ORIGIN_DIR/.claude; fi
+  update_own_assets "$asset_root"
+  printf '\n== done: %d updated, %d skipped, %d failed\n' "$INSTALLED" "$SKIPPED" "$PROBLEMS"
+  [ "$PROBLEMS" -eq 0 ]
+}
+
 case "$SUBCOMMAND" in
   doctor) cmd_doctor ;;
   ""|help) usage; exit 0 ;;
   list) cmd_list ;;
   status) cmd_status ;;
   install) cmd_install ;;
-  update|remove)
+  update) cmd_update ;;
+  remove)
     printf 'not implemented yet: %s\n' "$SUBCOMMAND" >&2; exit 3 ;;
   *) printf 'unknown command: %s\n' "$SUBCOMMAND" >&2; usage >&2; exit 2 ;;
 esac

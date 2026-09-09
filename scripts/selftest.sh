@@ -423,6 +423,71 @@ it "a failed package install is not counted as installed"
   assert_contains "0 installed" "$out"
   assert_eq "" "$(grep 'graphify claude install' "$STUB_CALLS")" )
 
+# --- update --------------------------------------------------------------
+it "update skips what is not installed"
+( stub_dir; absent graphify,headroom; stub claude
+  out=$(HOME=$(mktemp -d) scripts/loadout update --yes 2>&1)
+  assert_contains "not installed" "$out" )
+
+it "update refreshes the marketplace before updating a plugin"
+( stub_dir
+  cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "caveman@caveman"}]'
+exit 0
+EOF
+  chmod +x "$STUB/claude"
+  HOME=$(mktemp -d) scripts/loadout update --only caveman --yes >/dev/null 2>&1
+  assert_contains "marketplace update caveman" "$(stub_calls)"
+  assert_contains "plugin update caveman" "$(stub_calls)" )
+
+it "the pin gate fires when the available pin was never measured"
+out=$( stub_dir
+       cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "caveman@caveman"}]'
+exit 0
+EOF
+       chmod +x "$STUB/claude"
+       LOADOUT_FAKE_AVAILABLE=v9.9.9 HOME=$(mktemp -d) \
+       scripts/loadout update --only caveman --yes 2>&1 )
+assert_contains "NOT measured in this catalog" "$out"
+
+it "the pin gate stays quiet when the pins agree"
+out=$( stub_dir
+       cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "caveman@caveman"}]'
+exit 0
+EOF
+       chmod +x "$STUB/claude"
+       LOADOUT_FAKE_AVAILABLE=v2.6.0 HOME=$(mktemp -d) \
+       scripts/loadout update --only caveman --yes 2>&1 )
+assert_eq "" "$(printf '%s' "$out" | grep 'NOT measured')"
+
+it "the pin gate refuses without --yes and no TTY"
+( stub_dir; stub claude
+  assert_status 1 env LOADOUT_FAKE_AVAILABLE=v9.9.9 HOME=$(mktemp -d) \
+    scripts/loadout update --only caveman < /dev/null )
+
+it "update upgrades a python entry with the manager that is present"
+( stub_dir; absent uv; stub claude; stub pipx; stub graphify
+  HOME=$(mktemp -d) scripts/loadout update --only graphify --yes >/dev/null 2>&1
+  assert_contains "pipx upgrade graphifyy" "$(stub_calls)" )
+
+it "a locally edited own asset is never overwritten"
+( fake_home=$(mktemp -d); state=$fake_home/state
+  trap 'rm -rf "$LOADOUT_ROOT/skills/example-asset"' EXIT
+  stub_dir; absent graphify,headroom; stub claude
+  mkdir -p "$LOADOUT_ROOT/skills/example-asset" "$fake_home/.claude/skills/example-asset"
+  printf 'upstream\n' > "$LOADOUT_ROOT/skills/example-asset/SKILL.md"
+  printf 'edited by hand\n' > "$fake_home/.claude/skills/example-asset/SKILL.md"
+  printf 'example-asset·deadbeef\n' > "$state"
+  out=$(HOME=$fake_home LOADOUT_STATE=$state scripts/loadout update --yes 2>&1)
+  assert_contains "modified locally" "$out"
+  assert_eq "edited by hand" "$(cat "$fake_home/.claude/skills/example-asset/SKILL.md")" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

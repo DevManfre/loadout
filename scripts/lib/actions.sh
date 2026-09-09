@@ -127,3 +127,95 @@ _record_asset() {
 }
 
 _asset_sum() { find "${1%/}" -type f -exec cat {} + 2>/dev/null | sha256sum | cut -d' ' -f1; }
+
+# What the upstream would give us if we updated now. LOADOUT_FAKE_AVAILABLE is
+# a test seam; nothing else sets it.
+available_version() {
+  local name=$1 kind
+  [ -z "${LOADOUT_FAKE_AVAILABLE:-}" ] || { printf '%s' "$LOADOUT_FAKE_AVAILABLE"; return 0; }
+  kind=$(manifest_field "$name" 2)
+  case "$kind" in
+    plugin)
+      claude plugin marketplace list --json 2>/dev/null |
+        grep -o "\"$name[^\"]*\"" | head -1 | tr -d '"' ;;
+    pypkg) printf '%s' "unknown" ;;
+  esac
+}
+
+# The catalog measures a cost against a pin. Moving to a pin it never measured
+# means the price the user agreed to no longer describes what they are getting,
+# and caveman is the documented case: ~780 tokens on one pin, ~2,480 on the
+# next. So say it, and ask.
+pin_gate() {
+  local name=$1 available=$2 measured
+  measured=$(manifest_field "$name" 8)
+  [ -n "$available" ] || return 0
+  [ "$available" != "unknown" ] || return 0
+  [ "$available" != "$measured" ] || return 0
+
+  printf '   installed: %s (measured: %s)\n' "$(entry_version "$name")" "$(manifest_field "$name" 7)"
+  printf '   available: %s  (NOT measured in this catalog)\n' "$available"
+  printf '   ! the catalog price does not describe the version you are about to get\n'
+  confirm "update anyway?"
+}
+
+update_entry() {
+  local name=$1 kind source available
+  kind=$(manifest_field "$name" 2)
+  source=$(manifest_field "$name" 3)
+
+  say "$name"
+  if ! entry_installed "$name"; then _skip "not installed"; return 0; fi
+
+  available=$(available_version "$name")
+  pin_gate "$name" "$available" || { _skip "declined"; return 0; }
+
+  case "$kind" in
+    plugin)
+      run claude plugin marketplace update "$(plugin_marketplace "$name")" \
+        || _fail "marketplace update failed"
+      if run claude plugin update "$name"; then _ok
+      else _fail "claude plugin update $name failed"; fi
+      note "a plugin update needs a restart of the agent to take effect" ;;
+    pypkg)
+      case "$(_python_installer)" in
+        uv)   run uv tool upgrade "${source%%\[*}" || _fail "uv tool upgrade failed" ;;
+        pipx) run pipx upgrade "${source%%\[*}" || _fail "pipx upgrade failed" ;;
+        *)    _fail "no python installer on PATH"; return 0 ;;
+      esac
+      _ok ;;
+  esac
+}
+
+# A copied asset has no pin. What matters instead is whether the copy on disk
+# is still the one this repo wrote, because clobbering somebody's edit is the
+# one unrecoverable thing an updater can do.
+update_own_assets() {
+  local dest_root=$1 state=${LOADOUT_STATE:-$HOME/.claude/loadout/state}
+  local src base dest recorded current
+  for src in skills/*/ agents/*.md workflows/*.md; do
+    [ -e "$src" ] || continue
+    case "$src" in */.gitkeep) continue ;; esac
+    case "$src" in
+      skills/*)    dest=$dest_root/skills ;;
+      agents/*)    dest=$dest_root/agents ;;
+      workflows/*) dest=$dest_root/workflows ;;
+    esac
+    base=$(basename "${src%/}")
+    [ -e "$dest/$base" ] || { _skip "$base not installed"; continue; }
+
+    recorded=$(grep "^$base·" "$state" 2>/dev/null | awk -F'·' '{print $2}')
+    current=$(_asset_sum "$dest/$base")
+    if [ -n "$recorded" ] && [ "$recorded" != "$current" ]; then
+      say "$base"
+      note "modified locally: $dest/$base"
+      note "leaving it alone. To take the repo's version: cp -R '$src' '$dest/' after saving yours."
+      _skip "locally modified"
+      continue
+    fi
+    [ "$(_asset_sum "$src")" != "$current" ] || { _skip "$base already current"; continue; }
+    say "$base"
+    if run cp -R "${src%/}" "$dest/"; then _record_asset "$base" "$src"; _ok
+    else _fail "could not update $base"; fi
+  done
+}
