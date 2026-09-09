@@ -668,6 +668,37 @@ it "a changed cost number fails in every language"
   cd "$work" && assert_status 1 scripts/validate.sh
   rm -rf "$work" )
 
+# A prior version of the cost check searched for the manifest's number
+# anywhere in the whole catalog row, not in the row's own cost cell. That
+# false-passed on exactly the two entries whose pricing is compound: a
+# manifest cost of '~48' (corrupted from graphify's real '~340') was found
+# anyway, because graphify's own cost cell separately carries a per-call
+# '+48-105/toolcall' figure that happens to start with 48 -- likewise a
+# corrupted '~60' against caveman's own per-prompt '+60/prompt' suffix. The
+# check now reads only the first number of the cost cell (column 4 of 5),
+# so a per-call figure elsewhere in that same cell can no longer stand in
+# for the always-on one.
+it "a per-call figure cannot stand in for the always-on cost"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  sed -i 's/| ~340 +48-105\/toolcall *|/| ~48 +48-105\/toolcall |/' "$work/scripts/loadout.manifest"
+  assert_contains '~48 +48-105/toolcall' "$(cat "$work/scripts/loadout.manifest")"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
+it "a per-prompt figure cannot stand in for the always-on cost"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  sed -i 's/| ~2,480 +60\/prompt *|/| ~60 +60\/prompt |/' "$work/scripts/loadout.manifest"
+  assert_contains '~60 +60/prompt' "$(cat "$work/scripts/loadout.manifest")"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
+it "a malformed catalog row is reported, not silently accepted"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  sed -i 's/^| graphify |/| graphify | extra cell |/' "$work/README.md"
+  assert_contains '| graphify | extra cell |' "$(cat "$work/README.md")"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
 # --- harness integrity ---------------------------------------------------
 # Runs last, after every production library has been sourced, and proves the
 # counters still work rather than assuming it.
