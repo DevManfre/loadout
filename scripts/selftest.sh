@@ -223,7 +223,7 @@ EOF
   assert_contains "DRIFT" "$out" )
 
 it "status never reports DRIFT for an entry that is not installed"
-( stub_dir; stub claude
+( stub_dir; absent graphify,headroom; stub claude
   out=$(HOME=$(mktemp -d) scripts/loadout status 2>&1)
   assert_eq "" "$(printf '%s' "$out" | grep DRIFT)" )
 
