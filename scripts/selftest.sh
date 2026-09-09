@@ -289,6 +289,26 @@ it "the total names both budgets"
 ( stub_dir
   assert_contains "per tool call" "$(selection_total superpowers graphify)" )
 
+it "the menu prints in manifest order, not toggle order"
+( stub_dir; absent graphify,headroom; stub claude
+  assert_eq "superpowers caveman" \
+    "$(printf 'n\n2\n1\n\n' | menu_select $(resolve_selection) 2>/dev/null | tr '\n' ' ' | sed 's/ $//')" )
+
+it "d explains a blocked row instead of aborting"
+( stub_dir; absent uv,pipx; stub claude; stub git
+  out=$(printf 'd 3\n\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "why:" "$out" )
+
+it "d with a bad argument does not abort the menu"
+( stub_dir; absent graphify,headroom; stub claude
+  out=$(printf 'd 99\nd x\nd\n\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_eq "" "$(printf '%s' "$out" | grep 'unbound variable')" )
+
+it "a blocked row cannot be toggled on"
+( stub_dir; absent uv,pipx; stub claude; stub git
+  out=$(printf '3\n\n' | menu_select $(resolve_selection) 2>/dev/null)
+  assert_eq "" "$(printf '%s' "$out" | grep -x graphify)" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

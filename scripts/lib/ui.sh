@@ -68,11 +68,23 @@ selection_total() {
   printf 'selected %d · always-on:%s%s\n' "$#" "$per_session" "$per_call"
 }
 
+# Row number to entry name, across the selectable rows then the blocked ones.
+# Validation happens before any arithmetic: $(( x - 1 )) on a non-numeric string
+# aborts under set -u, which is exactly the crash this replaces.
+_menu_row() {
+  local n=$1 count=$2
+  shift 2
+  case "$n" in ''|*[!0-9]*) return 1 ;; esac
+  [ "$n" -ge 1 ] || return 1
+  [ "$n" -le $# ] || return 1
+  printf '%s' "${@:$n:1}"
+}
+
 # A numbered toggle list, redrawn after every keystroke line. No raw mode, no
 # cursor movement: this has to work over ssh, in WSL and under a pipe.
 menu_select() {
   local -a all=("$@") chosen=()
-  local i name reply
+  local i name reply idx token
   for name in "${all[@]}"; do chosen+=("$name"); done
 
   # Blocked entries are shown but cannot be chosen; that is the whole point of
@@ -93,9 +105,14 @@ menu_select() {
         printf '  %d [ ] %-12s %-22s ready\n' "$i" "$name" "$(manifest_field "$name" 7)" >&2
       fi
     done
-    for name in "${blocked[@]}"; do
-      printf '    [!] %-12s %-22s BLOCKED: needs %s\n' \
-        "$name" "$(manifest_field "$name" 7)" "$(entry_deps "$name" block | tr '\n' ' ')" >&2
+    # Blocked rows are numbered too, continuing after the selectable ones: the
+    # prompt offers `d <n>` for them, and an unnumbered row is an instruction
+    # the user cannot follow.
+    for name in "${blocked[@]:-}"; do
+      [ -n "$name" ] || continue
+      i=$((i + 1))
+      printf '  %d [!] %-12s %-22s BLOCKED: needs %s\n' \
+        "$i" "$name" "$(manifest_field "$name" 7)" "$(entry_deps "$name" block | tr '\n' ' ')" >&2
     done
     printf '\ntoggle 1-%d · a=all · n=none · d <n>=why · Enter=install %d · q=quit\n> ' \
       "${#all[@]}" "${#chosen[@]}" >&2
@@ -106,13 +123,25 @@ menu_select() {
       q|Q) return 1 ;;
       a|A) chosen=("${all[@]}") ;;
       n|N) chosen=() ;;
-      d\ *)
-        name=${all[$(( ${reply#d } - 1 ))]}
-        explain_dep "$(entry_deps "$name" block | head -1)" "$name" >&2 ;;
+      d|d\ *)
+        idx=${reply#d}; idx=${idx# }
+        name=$(_menu_row "$idx" 0 "${all[@]:-}" "${blocked[@]:-}") || {
+          printf '   d needs a row number, e.g. d 2\n' >&2; continue; }
+        token=$(entry_deps "$name" block | head -1)
+        if [ -n "$token" ]; then
+          explain_dep "$token" "$name" >&2
+        else
+          printf '   %s is ready — nothing is blocking it\n' "$name" >&2
+        fi ;;
       *[!0-9]*) printf '   not a number: %s\n' "$reply" >&2 ;;
       *)
-        name=${all[$((reply - 1))]:-}
-        [ -n "$name" ] || { printf '   no entry %s\n' "$reply" >&2; continue; }
+        name=$(_menu_row "$reply" 0 "${all[@]:-}" "${blocked[@]:-}") || {
+          printf '   no row %s\n' "$reply" >&2; continue; }
+        if printf '%s\n' "${blocked[@]:-}" | grep -qx "$name"; then
+          printf '   %s is blocked and cannot be selected\n' "$name" >&2
+          explain_dep "$(entry_deps "$name" block | head -1)" "$name" >&2
+          continue
+        fi
         if printf '%s\n' "${chosen[@]:-}" | grep -qx "$name"; then
           local -a keep=()
           for i in "${chosen[@]}"; do [ "$i" = "$name" ] || keep+=("$i"); done
