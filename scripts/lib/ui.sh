@@ -68,22 +68,20 @@ selection_total() {
   printf 'selected %d · always-on:%s%s\n' "$#" "$per_session" "$per_call"
 }
 
-# Row number to entry name, across the selectable rows then the blocked ones.
-# Validation happens before any arithmetic: $(( x - 1 )) on a non-numeric string
-# aborts under set -u, which is exactly the crash this replaces.
+# Row number to entry name, using menu_select's `rows` array. Validation happens
+# before any arithmetic: $(( x - 1 )) on a non-numeric string aborts under set -u.
 _menu_row() {
-  local n=$1 count=$2
-  shift 2
+  local n=$1
   case "$n" in ''|*[!0-9]*) return 1 ;; esac
   [ "$n" -ge 1 ] || return 1
-  [ "$n" -le $# ] || return 1
-  printf '%s' "${@:$n:1}"
+  [ "$n" -le "${#rows[@]}" ] || return 1
+  printf '%s' "${rows[$((n - 1))]}"
 }
 
 # A numbered toggle list, redrawn after every keystroke line. No raw mode, no
 # cursor movement: this has to work over ssh, in WSL and under a pipe.
 menu_select() {
-  local -a all=("$@") chosen=()
+  local -a all=("$@") chosen=() rows=()
   local i name reply idx token
   for name in "${all[@]}"; do chosen+=("$name"); done
 
@@ -95,6 +93,13 @@ menu_select() {
   done
 
   while :; do
+    # One array, in display order: selectable rows first, blocked rows after.
+    # Built with explicit appends because "${arr[@]:-}" on an empty array
+    # expands to a single empty argument, which would shift every row number.
+    rows=()
+    for name in "${all[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
+    for name in "${blocked[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
+
     printf '\n  #  entry        cost/session           status\n' >&2
     i=0
     for name in "${all[@]}"; do
@@ -112,10 +117,11 @@ menu_select() {
       [ -n "$name" ] || continue
       i=$((i + 1))
       printf '  %d [!] %-12s %-22s BLOCKED: needs %s\n' \
-        "$i" "$name" "$(manifest_field "$name" 7)" "$(entry_deps "$name" block | tr '\n' ' ')" >&2
+        "$i" "$name" "$(manifest_field "$name" 7)" \
+        "$(entry_deps "$name" block | tr '\n' ' ' | sed 's/ *$//')" >&2
     done
     printf '\ntoggle 1-%d · a=all · n=none · d <n>=why · Enter=install %d · q=quit\n> ' \
-      "${#all[@]}" "${#chosen[@]}" >&2
+      "${#rows[@]}" "${#chosen[@]}" >&2
 
     read -r reply || reply=""
     case "$reply" in
@@ -125,7 +131,7 @@ menu_select() {
       n|N) chosen=() ;;
       d|d\ *)
         idx=${reply#d}; idx=${idx# }
-        name=$(_menu_row "$idx" 0 "${all[@]:-}" "${blocked[@]:-}") || {
+        name=$(_menu_row "$idx") || {
           printf '   d needs a row number, e.g. d 2\n' >&2; continue; }
         token=$(entry_deps "$name" block | head -1)
         if [ -n "$token" ]; then
@@ -135,7 +141,7 @@ menu_select() {
         fi ;;
       *[!0-9]*) printf '   not a number: %s\n' "$reply" >&2 ;;
       *)
-        name=$(_menu_row "$reply" 0 "${all[@]:-}" "${blocked[@]:-}") || {
+        name=$(_menu_row "$reply") || {
           printf '   no row %s\n' "$reply" >&2; continue; }
         if printf '%s\n' "${blocked[@]:-}" | grep -qx "$name"; then
           printf '   %s is blocked and cannot be selected\n' "$name" >&2

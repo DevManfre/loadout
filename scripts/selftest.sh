@@ -309,6 +309,17 @@ it "a blocked row cannot be toggled on"
   out=$(printf '3\n\n' | menu_select $(resolve_selection) 2>/dev/null)
   assert_eq "" "$(printf '%s' "$out" | grep -x graphify)" )
 
+it "row numbers stay correct when nothing is selectable"
+( stub_dir; absent uv,pipx; stub claude; stub git
+  out=$(printf 'd 2\n\n' | menu_select 2>&1 >/dev/null)
+  assert_contains "headroom" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'skip graphify')" )
+
+it "the prompt counts every visible row"
+( stub_dir; absent uv,pipx; stub claude; stub git
+  out=$(printf '\n' | menu_select 2>&1 >/dev/null)
+  assert_contains "toggle 1-2" "$out" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
