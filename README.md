@@ -22,20 +22,59 @@ cd loadout
 scripts/install-all.sh
 ```
 
-The script covers every install path in the catalog — the Claude Code plugin CLI for
-plugin entries, a package manager for third-party binaries that cannot be shipped as
-plugins, and a plain copy for loadout's own assets. It never hides the price: every
-step prints its always-on token cost first and asks before paying it.
+`scripts/install-all.sh` is a three-line shim for `scripts/loadout install`, kept so
+the block above never has to change. Every command lives under that one entrypoint:
 
-It is idempotent. An already-installed plugin, binary or asset is reported and
-skipped, so re-running only fills the gaps.
+| Command | What it does |
+|---|---|
+| `install` | Choose what to install, then install it |
+| `update` | Upgrade what is already installed |
+| `status` | What is installed, its pin, what it costs |
+| `doctor` | Dependency report; changes nothing |
+| `remove <entry>` | Uninstall one entry |
+| `list` | The catalog as `scripts/loadout` sees it |
+
+`install` opens a menu with every installable entry already selected — Enter installs
+all of it. Deselecting one is a deliberate act, taken with its cost already on screen:
+
+```
+  #  entry        cost/session           status
+  1 [x] superpowers  ~800                   ready
+  2 [x] caveman      ~2,480 +60/prompt      ready
+  3 [x] graphify     ~340 +48-105/toolcall  ready
+  4 [x] headroom     none                   ready
+
+toggle 1-4 · a=all · n=none · d <n>=why · Enter=install 4 · q=quit
+>
+```
+
+A blocked entry stays numbered but cannot be toggled; `d <n>` prints what it is
+missing, why the entry needs it, how to fix it, and what skipping it costs.
 
 | Flag | What it does |
 |---|---|
-| `--dry-run` | Print every step and cost, change nothing |
-| `--yes` | Accept every printed cost up front (required with no TTY) |
-| `--scope project` | Install into the current repo instead of your user profile |
-| `--skip-graphify` | Leave the code graph out |
+| `--preset core\|full` | Restrict the menu to a named preset (default: `full`) |
+| `--only a,b` | Restrict to these entries |
+| `--except a,b` | Everything but these entries |
+| `--scope user\|project\|local` | Install target (default: `user`) |
+| `-y`, `--yes` | Accept every printed cost up front (required with no TTY) |
+| `-n`, `--dry-run` | Print every step and cost, change nothing |
+
+Every command is idempotent. An already-installed plugin, binary or asset is reported
+and skipped, so re-running only fills the gaps.
+
+### Updating
+
+`scripts/loadout update` never upgrades quietly. For every installed entry it prints
+the pin on disk, the pin the catalog measured and what that pin costs, warns you if
+you are already off the measured pin, and states that an update moves to whatever
+upstream publishes now — a pin this catalog has not measured — before it asks. caveman
+is the entry on record for why that gate exists: the same skill priced at ~780 tokens
+per session on the pin `84cc3c14fa1e` and at ~2,480 on `v2.6.0`, one version apart.
+`--yes` accepts every gate up front.
+
+Run `scripts/loadout doctor` at any time to see what is missing and how to fix it,
+without changing anything.
 
 ## Uninstall
 

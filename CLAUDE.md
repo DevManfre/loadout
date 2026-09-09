@@ -15,8 +15,10 @@ context than it saves does not belong here, however good its own README looks.
 The install path is deliberately one block. `scripts/install-all.sh` sets up the whole
 loadout in a single run — plugin entries through the Claude Code CLI, third-party
 binaries through a package manager, loadout's own assets by plain copy — printing each
-always-on token cost and asking before paying it. A loadout is carried whole; it is not
-a shopping list.
+always-on token cost and asking before paying it. A loadout is carried whole by
+default: the installer opens with every entry already selected, and Enter installs all
+of it. Deselecting is a deliberate act taken in front of the prices, not the normal
+path.
 
 ## Layout
 
@@ -25,8 +27,13 @@ skills/<name>/SKILL.md          loadout's own skills (+ references/, scripts/ as
 agents/<name>.md                loadout's own sub-agent definitions
 workflows/<name>.md             loadout's own workflow scripts / recipes
 integrations/<name>/            third-party guides (plugins, binaries, MCP servers)
+scripts/loadout                 single entrypoint: install, update, status, doctor, remove, list
 scripts/install-all.sh          one-block install of the whole loadout
+scripts/lib/                    manifest, probe, ui and actions libraries
+scripts/loadout.manifest        catalog data: one row per installable entry
+scripts/loadout.deps            dependency registry: what each entry needs, why, how to fix it
 scripts/validate.sh             structural validation
+scripts/selftest.sh             test runner
 docs/                           longer-form guides
 README.md                       canonical guide + catalog (English)
 README-it.md                    Italian mirror
@@ -69,3 +76,6 @@ skill; it holds the gitmoji meanings and the scope rules.
 None — no package manifest. Validation is structural, via `scripts/validate.sh`:
 frontmatter parses, every path the README names resolves, every integration documents
 itself and is reachable from the catalog, and the language mirrors stay in parity.
+`scripts/selftest.sh` is the runner for the installer itself: it stubs every
+executable an entry could probe for and runs `scripts/loadout` for real against that
+fake machine, with no network access and no actual install.

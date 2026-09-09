@@ -23,21 +23,60 @@ cd loadout
 scripts/install-all.sh
 ```
 
-Lo script copre ogni percorso di installazione del catalogo — la CLI dei plugin di
-Claude Code per le voci plugin, un package manager per i binari di terze parti che non
-possono essere distribuiti come plugin, e una semplice copia per gli asset di loadout.
-Non nasconde mai il prezzo: ogni passo stampa prima il suo costo in token sempre
-attivo e chiede conferma prima di pagarlo.
+`scripts/install-all.sh` è uno shim di tre righe per `scripts/loadout install`,
+tenuto così il blocco sopra non deve mai cambiare. Ogni comando vive sotto quell'unico
+punto d'ingresso:
 
-È idempotente. Un plugin, un binario o un asset già installato viene segnalato e
-saltato, quindi rieseguirlo copre solo quello che manca.
+| Comando | Cosa fa |
+|---|---|
+| `install` | Scegli cosa installare, poi installalo |
+| `update` | Aggiorna quello che è già installato |
+| `status` | Cosa è installato, il suo pin, quanto costa |
+| `doctor` | Report delle dipendenze; non cambia nulla |
+| `remove <entry>` | Disinstalla una voce |
+| `list` | Il catalogo così come lo vede `scripts/loadout` |
+
+`install` apre un menu con ogni voce installabile già selezionata — Invio le installa
+tutte. Deselezionarne una è un atto deliberato, preso con il suo costo già a schermo:
+
+```
+  #  entry        cost/session           status
+  1 [x] superpowers  ~800                   ready
+  2 [x] caveman      ~2,480 +60/prompt      ready
+  3 [x] graphify     ~340 +48-105/toolcall  ready
+  4 [x] headroom     none                   ready
+
+toggle 1-4 · a=all · n=none · d <n>=why · Enter=install 4 · q=quit
+>
+```
+
+Una voce bloccata resta numerata ma non può essere selezionata; `d <n>` stampa cosa
+manca, perché la voce ne ha bisogno, come risolverlo e quanto costa saltarla.
 
 | Opzione | Cosa fa |
 |---|---|
-| `--dry-run` | Stampa ogni passo e ogni costo, senza modificare nulla |
-| `--yes` | Accetta in anticipo tutti i costi stampati (obbligatoria senza TTY) |
-| `--scope project` | Installa nel repository corrente invece che nel tuo profilo utente |
-| `--skip-graphify` | Lascia fuori il code graph |
+| `--preset core\|full` | Limita il menu a un preset con nome (default: `full`) |
+| `--only a,b` | Limita a queste voci |
+| `--except a,b` | Tutto tranne queste voci |
+| `--scope user\|project\|local` | Destinazione dell'installazione (default: `user`) |
+| `-y`, `--yes` | Accetta in anticipo tutti i costi stampati (obbligatoria senza TTY) |
+| `-n`, `--dry-run` | Stampa ogni passo e ogni costo, senza modificare nulla |
+
+Ogni comando è idempotente. Un plugin, un binario o un asset già installato viene
+segnalato e saltato, quindi rieseguirlo copre solo quello che manca.
+
+### Aggiornamento
+
+`scripts/loadout update` non aggiorna mai in silenzio. Per ogni voce installata
+stampa il pin su disco, il pin misurato dal catalogo e quanto costa quel pin, avvisa
+se sei già fuori dal pin misurato, e dichiara che un aggiornamento sposta a qualunque
+cosa l'upstream pubblichi ora — un pin che questo catalogo non ha misurato — prima di
+chiedere conferma. caveman è la voce agli atti sul perché quel gate esiste: la stessa
+skill costava ~780 token a sessione sul pin `84cc3c14fa1e` e ~2.480 su `v2.6.0`, a un
+solo numero di versione di distanza. `--yes` accetta in anticipo ogni gate.
+
+Esegui `scripts/loadout doctor` in qualsiasi momento per vedere cosa manca e come
+risolverlo, senza cambiare nulla.
 
 ## Disinstallazione
 
