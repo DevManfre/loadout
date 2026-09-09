@@ -34,6 +34,7 @@ export LOADOUT_ROOT ORIGIN_DIR
 . scripts/lib/manifest.sh
 . scripts/lib/probe.sh
 . scripts/lib/ui.sh
+. scripts/lib/actions.sh
 
 usage() { awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; }
 
@@ -134,12 +135,63 @@ cmd_status() {
   printf '\n   projected cost of an installed plugin: claude plugin details <name>\n'
 }
 
+cmd_install() {
+  local -a selection
+  local name
+
+  # A hard stop, not a per-entry skip: without a TTY to ask on and without
+  # --yes to accept the printed costs up front, there is no way to confirm a
+  # single mutation, so the whole command refuses rather than silently
+  # skipping its way to a quiet, successful-looking no-op.
+  if [ "$OPT_YES" -ne 1 ] && [ ! -t 0 ]; then
+    printf '   FAIL: no TTY to confirm on; re-run with --yes to accept the printed costs\n' >&2
+    return 1
+  fi
+
+  if [ "$OPT_YES" -eq 1 ] || [ -n "$OPT_ONLY" ] || [ -n "$OPT_EXCEPT" ] || [ ! -t 0 ]; then
+    mapfile -t selection < <(resolve_selection)
+  else
+    mapfile -t selection < <(menu_select $(resolve_selection)) || { note "cancelled"; return 0; }
+  fi
+
+  # An entry named explicitly but blocked must say why rather than vanish.
+  if [ -n "$OPT_ONLY" ]; then
+    for name in $(printf '%s' "$OPT_ONLY" | tr ',' ' '); do
+      manifest_field "$name" 1 >/dev/null 2>&1 || continue
+      printf '%s\n' "${selection[@]:-}" | grep -qx "$name" && continue
+      entry_installed "$name" && continue
+      say "$name"
+      for token in $(entry_deps "$name" block); do
+        printf '   [!] %s — cannot install here (missing: %s)\n' "$name" "$token"
+        explain_dep "$token" "$name"
+      done
+    done
+  fi
+
+  if [ "${#selection[@]}" -gt 0 ] && [ -n "${selection[0]:-}" ]; then
+    say "$(selection_total "${selection[@]}")"
+    for name in "${selection[@]}"; do install_entry "$name"; done
+  fi
+
+  local asset_root
+  if [ "$OPT_SCOPE" = user ]; then asset_root=$HOME/.claude; else asset_root=$ORIGIN_DIR/.claude; fi
+  say "loadout's own assets"
+  cost "one description each in the skill or agent index; bodies load only when invoked"
+  copy_own_assets "$asset_root"
+
+  printf '\n== done: %d installed, %d skipped, %d failed\n' "$INSTALLED" "$SKIPPED" "$PROBLEMS"
+  [ "$OPT_DRY_RUN" -eq 1 ] && note "(dry run — nothing was changed)"
+  note "too heavy in practice? '/plugin disable <name>' drops it from context without uninstalling."
+  [ "$PROBLEMS" -eq 0 ]
+}
+
 case "$SUBCOMMAND" in
   doctor) cmd_doctor ;;
   ""|help) usage; exit 0 ;;
   list) cmd_list ;;
   status) cmd_status ;;
-  install|update|remove)
+  install) cmd_install ;;
+  update|remove)
     printf 'not implemented yet: %s\n' "$SUBCOMMAND" >&2; exit 3 ;;
   *) printf 'unknown command: %s\n' "$SUBCOMMAND" >&2; usage >&2; exit 2 ;;
 esac

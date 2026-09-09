@@ -320,6 +320,75 @@ it "the prompt counts every visible row"
   out=$(printf '\n' | menu_select 2>&1 >/dev/null)
   assert_contains "toggle 1-2" "$out" )
 
+# --- install ---------------------------------------------------------------
+it "install runs the plugin CLI for a plugin entry"
+( stub_dir; stub claude; stub git
+  HOME=$(mktemp -d) scripts/loadout install --only superpowers --yes >/dev/null 2>&1
+  assert_contains "plugin install superpowers@claude-plugins-official" "$(stub_calls)" )
+
+it "install adds a marketplace when the source names one"
+( stub_dir; stub claude; stub git
+  HOME=$(mktemp -d) scripts/loadout install --only caveman --yes >/dev/null 2>&1
+  assert_contains "marketplace add JuliusBrussee/caveman" "$(stub_calls)" )
+
+# graphify is a real binary on this machine, so its dependency probe must be
+# faked absent too or resolve_selection sees it as already installed and the
+# python-installer branch below never runs; it is also stubbed so that, once
+# the fake-absent probe lets install proceed, `_post_install_pypkg` runs a
+# harmless logger instead of the real `graphify install`.
+it "install prefers uv over pipx for a python entry"
+( stub_dir; absent graphify; stub claude; stub uv; stub pipx; stub graphify
+  HOME=$(mktemp -d) scripts/loadout install --only graphify --yes >/dev/null 2>&1
+  assert_contains "uv tool install graphifyy" "$(stub_calls)"
+  assert_eq "" "$(grep pipx "$STUB_CALLS")" )
+
+it "install falls back to pipx when uv is absent"
+( stub_dir; absent uv,graphify; stub claude; stub pipx; stub graphify
+  HOME=$(mktemp -d) scripts/loadout install --only graphify --yes >/dev/null 2>&1
+  assert_contains "pipx install graphifyy" "$(stub_calls)" )
+
+it "install prints the cost before the command"
+out=$( stub_dir; stub claude; stub git
+       HOME=$(mktemp -d) scripts/loadout install --only superpowers --yes 2>&1 )
+assert_contains "cost: ~800" "$out"
+
+it "dry run mutates nothing at all"
+( stub_dir; stub claude; stub git; stub uv
+  HOME=$(mktemp -d) scripts/loadout install --yes --dry-run >/dev/null 2>&1
+  assert_eq "" "$(grep -E '(plugin install|tool install|marketplace add)' "$STUB_CALLS")" )
+
+# graphify must also be faked absent here: otherwise entry_installed reports
+# it as already installed on this machine and the blocked-entry diagnostic in
+# cmd_install is skipped (it only fires for a named entry that is neither
+# selected nor already installed), so the explanation this test looks for
+# would never be printed.
+it "a blocked entry named with --only refuses and explains"
+out=$( stub_dir; absent uv,pipx,graphify; stub claude; stub git
+       HOME=$(mktemp -d) scripts/loadout install --only graphify --yes 2>&1 )
+assert_contains "cannot install here" "$out"
+assert_contains "docs.astral.sh" "$out"
+
+it "no TTY and no --yes is a hard stop"
+( stub_dir; stub claude; stub git
+  assert_status 1 env HOME=$(mktemp -d) scripts/loadout install --only superpowers < /dev/null )
+
+it "install-all.sh still works as a shim"
+( stub_dir; stub claude; stub git
+  HOME=$(mktemp -d) scripts/install-all.sh --only superpowers --yes >/dev/null 2>&1
+  assert_contains "plugin install superpowers" "$(stub_calls)" )
+
+# The example asset is created inside the real repo tree (copy_own_assets
+# reads from relative skills/*/ paths), so a trap guarantees it is removed
+# even if an assertion above aborts the subshell under set -u.
+it "loadout's own assets are copied, and never twice"
+( stub_dir; stub claude
+  fake_home=$(mktemp -d)
+  mkdir -p "$LOADOUT_ROOT/skills/example-asset"
+  printf -- '---\nname: example-asset\ndescription: x\n---\n' > "$LOADOUT_ROOT/skills/example-asset/SKILL.md"
+  trap 'rm -rf "$LOADOUT_ROOT/skills/example-asset"' EXIT
+  HOME=$fake_home scripts/loadout install --only nothing --yes >/dev/null 2>&1
+  assert_eq "0" "$([ -f "$fake_home/.claude/skills/example-asset/SKILL.md" ]; echo $?)" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
