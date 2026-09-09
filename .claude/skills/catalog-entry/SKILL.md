@@ -154,42 +154,73 @@ for a file that ships.
 An entry that is not reachable and not installable is a broken entry, and `validate.sh`
 will say so.
 
-1. **`scripts/install-all.sh`** — a plugin gets an `install_plugin` call with its price
-   string; a binary gets its own block; loadout's own assets are already covered by the
-   `copy_assets` globs. A new marketplace needs an `add_marketplace` call above. The cost
-   string printed here must match the entry's always-on figure.
-2. **README catalog** — a row in the right table: name, what it does, what you get back,
+1. **A third-party integration gets one row in `scripts/loadout.manifest`** — the data
+   file `scripts/loadout` reads to build the menu and run `install`/`update`/`status`/
+   `remove`. Columns, `|`-delimited, no field may contain a `|`:
+   - `name` — the entry's id; must match `integrations/<name>/` exactly.
+   - `kind` — `plugin` or `pypkg`; `install_entry` understands nothing else.
+   - `source` — for a plugin, `marketplace=owner/repo` if a new marketplace must be
+     added, or the bare marketplace name if one is already configured; for a pypkg, the
+     package name, extras included (e.g. `headroom-ai[proxy]`).
+   - `presets` — comma-separated subset of `core,full` this entry belongs to.
+   - `needs` — comma-separated dependency tokens (next step); a `/` inside one token
+     groups alternatives that each satisfy it, e.g. `uv/pipx`.
+   - `probe` — how `status`/`doctor` detect it: `plugin:<name>`, `bin:<name>`; see
+     `scripts/lib/probe.sh` for the forms it understands.
+   - `cost_session` — the always-on figure from steps 3–4, written exactly as the README
+     catalog cell will read; `validate.sh` cross-checks the two and fails on drift.
+   - `measured` — the pinned version from step 2.
+2. **A dependency token in `needs` that is not already in `scripts/loadout.deps` gets its
+   own row there**: the token, its severity (`block` keeps the entry out of the menu
+   entirely, `warn` installs anyway and says what is degraded, `runtime` never blocks and
+   only shows up later as "installed, not in the path"), how it is probed, which platform
+   it applies to (`always`, or `platform:<uname -s>/<uname -m>`), why the entry needs it,
+   how to fix it, and which doc explains it.
+3. **Loadout's own assets need neither.** `copy_own_assets` copies every `skills/*/`,
+   `agents/*.md` and `workflows/*.md` unconditionally, so dropping the file in the right
+   directory (step 0) is the entire wiring step. Do not give one a manifest row: it has no
+   `integrations/<name>/` guide, and `validate.sh` requires every manifest row's name to
+   resolve to one.
+4. **README catalog** — a row in the right table: name, what it does, what you get back,
    always-on cost, link to the guide. Use the **readme-sync** skill; `README.md` is
    canonical, `README-it.md` and every other mirror change in the same commit.
-3. **Integration guides have mirrors too** — `integrations/<name>/README-it.md` is
+5. **Integration guides have mirrors too** — `integrations/<name>/README-it.md` is
    required by the parity check, not optional.
-4. **Removing an entry** is the same list in reverse, plus `🔥`. Renaming a shipped
+6. **Removing an entry** is the same list in reverse, plus `🔥`. Renaming a shipped
    `skills/` name breaks existing installs: `💥`, and spell out the migration in the body.
 
 ## 7. Verify before claiming done
 
 ```bash
 scripts/validate.sh
-scripts/install-all.sh --dry-run
+scripts/selftest.sh
+scripts/loadout install --dry-run
 ```
 
-`validate.sh` must print `ok`. The dry run must show the new step with its cost line and
-change nothing. If the parity check complains about heading, fence, link or table counts,
-a hunk was dropped from a mirror — fix it, do not adjust the count.
+`validate.sh` must print `ok` — for a third-party integration this includes checking that
+the new manifest row resolves to `integrations/<name>/README.md` (+ mirror) and that its
+`cost_session` matches the README cell. `scripts/selftest.sh` must still report every
+test passing; add a case for the new entry if it exercises something no existing test
+does (a new dependency token, a new probe form). The dry run must show the new entry
+priced in the menu and change nothing. If the parity check complains about heading,
+fence, link or table counts, a hunk was dropped from a mirror — fix it, do not adjust the
+count.
 
 ## 8. Commit
 
-One commit covering the guide, its mirrors, `install-all.sh` and the README catalog. Use
-the **commit-convention** skill: `✨ INTEGRATION - …` for a new third-party entry,
-`✨ SKILL - …` / `✨ AGENT - …` for loadout's own, `📝` when only the write-up changes,
-`🔥` for a removal. English, no attribution trailer.
+One commit covering the guide, its mirrors, the `scripts/loadout.manifest` row (and any
+new `scripts/loadout.deps` row) and the README catalog. Use the **commit-convention**
+skill: `✨ INTEGRATION - …` for a new third-party entry, `✨ SKILL - …` / `✨ AGENT - …`
+for loadout's own, `📝` when only the write-up changes, `🔥` for a removal. English, no
+attribution trailer.
 
 ## Red flags
 
 - "Upstream says it saves 65%" with no local measurement → the entry is not written yet.
 - A cost quoted as a single number → the three budgets were not separated.
 - Every item in the verdict table marked Keep → the judging step was skipped.
-- The guide exists but `install-all.sh` and the README do not mention it → half a commit.
+- A guide exists but the manifest has no row → `validate.sh` fails.
+- A guide exists but the README does not mention it → half a commit.
 - An `integrations/<name>/README.md` with no `README-it.md` → parity check fails.
 - Something added under `.claude/` also added to the catalog → boundary violated.
 - A copy of the upstream's files committed into this repo → loadout vendors nothing.
