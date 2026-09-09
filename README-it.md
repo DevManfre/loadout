@@ -7,7 +7,8 @@ framework: un insieme curato di skill, sub-agent, workflow e integrazioni di ter
 parti, ognuna documentata con il contesto che costa davvero — misurato su un
 repository reale, non copiato dal README upstream. Lo script di installazione mette
 in piedi l'insieme completo in un blocco solo, perché un loadout è qualcosa che si
-porta interamente, non una lista della spesa da cui pescare un pezzo alla volta.
+porta interamente: il menu si apre con ogni voce già selezionata e Invio le installa
+tutte. Deselezionarne una è un atto deliberato, preso con il suo costo a schermo.
 
 Qui non c'è nulla di vendorizzato. Ogni asset si installa dalla sua fonte upstream,
 quindi mantieni gli aggiornamenti upstream e non perdi niente se leggi la guida
@@ -127,8 +128,13 @@ skills/<name>/SKILL.md          loadout's own skills
 agents/<name>.md                loadout's own sub-agent definitions
 workflows/<name>.md             loadout's own workflow scripts and recipes
 integrations/<name>/            third-party guides (plugins, binaries, MCP servers)
+scripts/loadout                 single entrypoint: install, update, status, doctor, remove, list
 scripts/install-all.sh          one-block install of the whole loadout
+scripts/lib/                    manifest, probe, ui and actions libraries
+scripts/loadout.manifest        catalog data: one row per installable entry
+scripts/loadout.deps            dependency registry: what each entry needs, why, how to fix it
 scripts/validate.sh             structural validation
+scripts/selftest.sh             test runner
 docs/                           longer-form guides
 ```
 
@@ -139,6 +145,10 @@ lingua restano in parità:
 ```bash
 scripts/validate.sh
 ```
+
+`scripts/selftest.sh` è il test runner dell'installer stesso: esercita
+`scripts/loadout` contro una macchina finta, senza accesso alla rete e senza
+installazioni reali.
 
 ## Licenza
 

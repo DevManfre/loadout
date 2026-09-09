@@ -6,8 +6,9 @@ A guide to setting up your own Claude Code well. Not a plugin, not a framework: 
 curated set of skills, sub-agents, workflows and third-party integrations, each one
 documented with the context it actually costs — measured on a real repository, not
 copied from an upstream README. The install script wires up the whole set in one
-block, because a loadout is something you carry as a whole, not a shopping list you
-pick from one item at a time.
+block, because a loadout is something you carry as a whole: the menu opens with every
+entry already selected and Enter takes all of it. Deselecting one is a deliberate act,
+taken with its cost on screen.
 
 Nothing here is vendored. Every asset is installed from its own upstream source, so
 you keep upstream updates and lose nothing by reading the guide instead of adopting it.
@@ -123,8 +124,13 @@ skills/<name>/SKILL.md          loadout's own skills
 agents/<name>.md                loadout's own sub-agent definitions
 workflows/<name>.md             loadout's own workflow scripts and recipes
 integrations/<name>/            third-party guides (plugins, binaries, MCP servers)
+scripts/loadout                 single entrypoint: install, update, status, doctor, remove, list
 scripts/install-all.sh          one-block install of the whole loadout
+scripts/lib/                    manifest, probe, ui and actions libraries
+scripts/loadout.manifest        catalog data: one row per installable entry
+scripts/loadout.deps            dependency registry: what each entry needs, why, how to fix it
 scripts/validate.sh             structural validation
+scripts/selftest.sh             test runner
 docs/                           longer-form guides
 ```
 
@@ -135,6 +141,10 @@ parity:
 ```bash
 scripts/validate.sh
 ```
+
+`scripts/selftest.sh` is the installer's own test runner: it exercises
+`scripts/loadout` against a faked machine, with no network access and no real
+installs.
 
 ## License
 
