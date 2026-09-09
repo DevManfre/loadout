@@ -22,6 +22,10 @@ cd "$(dirname "$0")/.."
 OFFICIAL_NAME=claude-plugins-official
 OFFICIAL_SOURCE=anthropics/claude-plugins-official
 
+# caveman is not in the official directory; it publishes its own marketplace.
+CAVEMAN_NAME=caveman
+CAVEMAN_SOURCE=JuliusBrussee/caveman
+
 scope=user
 assume_yes=0
 dry_run=0
@@ -100,17 +104,25 @@ if ! command -v claude >/dev/null 2>&1; then
 fi
 
 # --- Plugin entries -------------------------------------------------------
-# Loadout runs no marketplace of its own. Plugin entries are installed from
-# Anthropic's official directory, which pins a commit — so what you get is a
-# fixed revision, not upstream HEAD.
+# Loadout runs no marketplace of its own. Plugin entries come from Anthropic's
+# official directory where the upstream publishes there, and from the upstream's
+# own marketplace where it does not. Either way `claude plugin install` pins a
+# commit — so what you get is a fixed revision, not a moving HEAD.
 
-say "marketplace $OFFICIAL_NAME"
-cost "none — an index, not an install"
-if claude plugin marketplace list 2>/dev/null | grep -Eq "^[[:space:]]*[^[:alnum:]]*[[:space:]]*${OFFICIAL_NAME}$"; then
-  skip "already configured"
-else
-  run claude plugin marketplace add "$OFFICIAL_SOURCE" || fail "could not add $OFFICIAL_SOURCE"
-fi
+add_marketplace() {
+  local name=$1 source=$2
+
+  say "marketplace $name"
+  cost "none — an index, not an install"
+  if claude plugin marketplace list 2>/dev/null | grep -Eq "^[[:space:]]*[^[:alnum:]]*[[:space:]]*${name}$"; then
+    skip "already configured"
+    return 0
+  fi
+  run claude plugin marketplace add "$source" || fail "could not add $source"
+}
+
+add_marketplace "$OFFICIAL_NAME" "$OFFICIAL_SOURCE"
+add_marketplace "$CAVEMAN_NAME" "$CAVEMAN_SOURCE"
 
 # Keep in sync with the catalog in README.md.
 install_plugin() {
@@ -141,6 +153,9 @@ install_plugin() {
 
 install_plugin superpowers "$OFFICIAL_NAME" \
   "~800 tokens at every session start, /clear and compaction (SessionStart hook)"
+
+install_plugin caveman "$CAVEMAN_NAME" \
+  "~2,480 tokens at every session start, /clear and compaction, plus ~60 on every user prompt (two hooks)"
 
 # --- Third-party binaries -------------------------------------------------
 # graphify is a Python package, not a plugin: a plugin cannot run a package

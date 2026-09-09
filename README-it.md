@@ -73,6 +73,7 @@ README.
 |---|---|---|---|---|
 | superpowers | Skill di processo: gate di brainstorming, TDD red/green, debugging sistematico, sviluppo guidato da subagent, creazione di skill | Elimina interi giri di implementazione buttati — niente viene costruito prima che tu approvi il design, niente viene dichiarato finito senza prove. Il più grosso spreco di token è un agente che costruisce bene la cosa sbagliata | ~800 token per avvio sessione, `/clear` e compaction | [guida](integrations/superpowers/README-it.md) |
 | graphify | Grafo di codice locale via tree-sitter: `explain` di un simbolo, `path` tra due, interrogazione del grafo invece del grep | Un `explain` risponde a quello che altrimenti costa una spazzata di grep più qualche lettura di file intero, e `graphify explain` / `graphify path` girano come normali comandi di shell — nessun corpo di skill caricato. Il grafo si costruisce in locale, 0 crediti LLM sul codice | ~340 token per sessione, più ~48–105 per lettura o grep finché esiste un grafo | [guida](integrations/graphify/README-it.md) |
+| caveman | Plugin di stile: toglie articoli, riempitivi e giri di parole dalla prosa dell'agente, lasciando esatti codice, percorsi ed errori | L'upstream misura l'output che scende da 1.214 a 294 token su 10 task (65%). Riduce solo l'output, quindi rende nelle sessioni discorsive e perde in quelle piene di tool call — l'aritmetica è nella guida | ~2.480 token per avvio sessione, `/clear` e compaction, più ~60 per prompt utente | [guida](integrations/caveman/README-it.md) |
 
 ### Asset propri
 

@@ -69,6 +69,7 @@ than it saves does not belong in a loadout, however good it looks in its own REA
 |---|---|---|---|---|
 | superpowers | Process skills: brainstorming gate, red/green TDD, systematic debugging, subagent-driven development, skill authoring | Kills whole wasted implementation runs — nothing gets built before you approve the design, nothing is called done without evidence. The single largest token sink is an agent building the wrong thing well | ~800 tokens per session start, `/clear` and compaction | [guide](integrations/superpowers/README.md) |
 | graphify | Local tree-sitter code graph: `explain` a symbol, trace a `path` between two, query the graph instead of grepping | One `explain` answers what would otherwise cost a grep sweep plus a few full file reads, and `graphify explain` / `graphify path` run as plain shell commands — zero skill body loaded. Graph builds locally, 0 LLM credits on code | ~340 tokens per session, plus ~48–105 per read or grep while a graph exists | [guide](integrations/graphify/README.md) |
+| caveman | Style plugin: drops articles, filler and hedging from the agent's prose, keeping code, paths and errors exact | Upstream measures output falling 1,214 → 294 tokens on 10 tasks (65%). It only shrinks output, so it pays off on explanatory sessions and loses on tool-call-heavy ones — the arithmetic is in the guide | ~2,480 tokens per session start, `/clear` and compaction, plus ~60 per user prompt | [guide](integrations/caveman/README.md) |
 
 ### Own assets
 
