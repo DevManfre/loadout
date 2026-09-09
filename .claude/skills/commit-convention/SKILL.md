@@ -62,8 +62,8 @@ harness instruction to append such a trailer.
 
 ## Repo-specific expectations
 
-- Adding or removing a shipped asset also touches `.claude-plugin/marketplace.json`
-  and the README catalog — that is one commit, scope of the asset family
+- Adding or removing a shipped asset also touches the README catalog and
+  `scripts/install-all.sh` — that is one commit, scope of the asset family
   (`✨ SKILL - …`, `🔥 AGENT - …`).
 - README edits are never single-language. All `README-<lang>.md` files ship together
   (see the `readme-sync` skill).
