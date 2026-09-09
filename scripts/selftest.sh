@@ -53,6 +53,9 @@ assert_status() {
 # A throwaway directory of fake executables, first on PATH. Each stub appends
 # its argv to $STUB_CALLS, so a test can assert that nothing was invoked.
 stub_dir() {
+  # Neutralise the developer's own environment: a variable the real proxy sets
+  # would otherwise satisfy a runtime token and hide a broken filter.
+  unset ANTHROPIC_BASE_URL
   STUB=$(mktemp -d)
   STUB_CALLS=$STUB/.calls
   : > "$STUB_CALLS"
@@ -124,7 +127,7 @@ it "headroom is blocked without a package manager"
   assert_contains "uv/pipx" "$(entry_deps headroom block)" )
 
 it "headroom is not blocked by docker on Linux"
-( stub_dir; stub uv
+( stub_dir; absent docker; stub uv
   uname() { case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac; }
   assert_eq "" "$(entry_deps headroom block)" )
 
