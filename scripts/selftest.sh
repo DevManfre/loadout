@@ -208,6 +208,39 @@ it "status mutates nothing"
   scripts/loadout status >/dev/null 2>&1
   assert_eq "" "$(grep -E '(plugin install|tool install|upgrade)' "$STUB_CALLS")" )
 
+it "status reports DRIFT when the installed pin is not the measured one"
+( stub_dir
+  fake=$(mktemp -d)
+  mkdir -p "$fake/.claude/plugins/cache/caveman/caveman/84cc3c14fa1e"
+  cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "caveman@caveman"}]'
+exit 0
+EOF
+  chmod +x "$STUB/claude"
+  out=$(HOME=$fake scripts/loadout status 2>&1)
+  assert_contains "DRIFT" "$out" )
+
+it "status never reports DRIFT for an entry that is not installed"
+( stub_dir; stub claude
+  out=$(HOME=$(mktemp -d) scripts/loadout status 2>&1)
+  assert_eq "" "$(printf '%s' "$out" | grep DRIFT)" )
+
+it "the absent seam reaches entry_installed's binary probe"
+( stub_dir; stub graphify; absent graphify
+  assert_status 1 entry_installed graphify )
+
+it "status names every runtime gap, not just the last"
+( stub_dir; stub demo
+  fx=$(mktemp -d)
+  printf 'demo | pypkg | demo-pkg | full | r1,r2 | bin:demo | none | 1.0\n' > "$fx/manifest"
+  printf 'r1 | runtime | env:LOADOUT_TEST_R1 | always | first gap | set it | README.md\n' > "$fx/deps"
+  printf 'r2 | runtime | env:LOADOUT_TEST_R2 | always | second gap | set it | README.md\n' >> "$fx/deps"
+  out=$(LOADOUT_MANIFEST=$fx/manifest LOADOUT_DEPS=$fx/deps HOME=$(mktemp -d) scripts/loadout status 2>&1)
+  assert_contains "r1" "$out"
+  assert_contains "r2" "$out" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

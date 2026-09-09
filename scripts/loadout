@@ -107,7 +107,7 @@ cmd_list() {
 
 cmd_status() {
   printf '%-12s %-16s %-10s %-24s %s\n' entry installed measured cost note
-  local name installed measured drift gap
+  local name installed measured drift gap gaps
   for name in $(manifest_names); do
     if entry_installed "$name"; then
       installed=$(entry_version "$name")
@@ -123,9 +123,10 @@ cmd_status() {
     esac
     gap=""
     if [ "$installed" != "not installed" ]; then
-      for token in $(entry_deps "$name" runtime); do
-        gap="installed, not in the path ($token)"
-      done
+      # Every gap, not only the last one: an entry can be missing more than one
+      # runtime dependency, and a report that names one of them is misleading.
+      gaps=$(entry_deps "$name" runtime | tr '\n' ',' | sed 's/,$//')
+      [ -z "$gaps" ] || gap="installed, not in the path ($gaps)"
     fi
     printf '%-12s %-16s %-10s %-24s %s\n' \
       "$name" "$installed" "$measured" "$(manifest_field "$name" 7)" "${drift}${drift:+ }${gap}"
