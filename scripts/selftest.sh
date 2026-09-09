@@ -161,7 +161,7 @@ out=$( stub_dir; absent uv,pipx; stub claude; stub git
 assert_contains "cannot install here" "$out"
 assert_contains "why:" "$out"
 assert_contains "fix:" "$out"
-assert_contains "integrations/graphify/README.md" "$out"
+assert_contains "docs: README.md" "$out"
 
 it "doctor exits 1 when something is blocked"
 ( stub_dir; absent uv,pipx; stub claude; stub git
