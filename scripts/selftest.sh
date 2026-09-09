@@ -594,6 +594,11 @@ out=$( stub_dir; stub claude
        HOME=$(mktemp -d) scripts/loadout remove caveman --yes 2>&1 )
 assert_contains "plugin disable" "$out"
 
+# Unlike every other test here, this one calls remove_entry in-process rather
+# than through the loadout CLI subprocess: cmd_remove prints no summary line
+# to assert on, and INSTALLED is mutated inside remove_entry itself, a
+# mutation that cannot survive a $(...) subshell. So the counter is asserted
+# directly instead of scraping it from output.
 it "a failed uninstall is not counted as removed"
 ( stub_dir; absent uv; stub claude; stub graphify; stub pipx 1
   export HOME=$(mktemp -d)
@@ -615,6 +620,34 @@ INNEREOF
   out=$(HOME=$(mktemp -d) scripts/loadout remove caveman --yes 2>&1)
   assert_contains "FAIL" "$out"
   assert_contains "claude plugin uninstall caveman failed" "$out" )
+
+# --- validation ----------------------------------------------------------
+it "validate passes on the repo as it stands"
+assert_status 0 scripts/validate.sh
+
+it "validate catches a cost that drifted from the README"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  sed -i 's/| ~800  *|/| ~999 |/' "$work/scripts/loadout.manifest"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
+it "validate catches a needs token with no registry row"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  sed -i 's/| claude,git  *|/| claude,git,unicorn |/' "$work/scripts/loadout.manifest"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
+it "validate catches an entry with no guide"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  rm -rf "$work/integrations/headroom"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
+it "validate catches a pipe inside a data field"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  printf 'bogus | plugin | x | full | claude | plugin:x | a|b | 1\n' >> "$work/scripts/loadout.manifest"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
 
 # --- harness integrity ---------------------------------------------------
 # Runs last, after every production library has been sourced, and proves the

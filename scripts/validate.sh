@@ -151,6 +151,75 @@ if [ -n "$index_failures" ]; then
   fails=$((fails + index_fails))
 fi
 
+# The manifest is the single source of truth for what the catalog carries and
+# what it costs. These checks are what make that true rather than aspirational.
+#
+# The cost check compares only the first whitespace-delimited token of
+# cost_session (e.g. '~2,480' out of '~2,480 +60/prompt') against each
+# README's catalog row, not the whole field: the manifest also carries a
+# compact per-call display suffix ('+60/prompt', '+48-105/toolcall') that no
+# README row quotes verbatim, while the always-on number is what every row
+# states.
+manifest_failures=$(LOADOUT_ROOT=$PWD python3 <<'PY'
+import os, re, sys
+
+def table(path, want):
+    rows = []
+    for n, line in enumerate(open(path, encoding='utf-8'), 1):
+        s = line.strip()
+        if not s or s.startswith('#'):
+            continue
+        cells = [c.strip() for c in s.split('|')]
+        if len(cells) != want:
+            print(f"FAIL: {path}:{n}: expected {want} columns, found {len(cells)}")
+            continue
+        rows.append(cells)
+    return rows
+
+entries = table('scripts/loadout.manifest', 8)
+deps = {r[0]: r for r in table('scripts/loadout.deps', 7)}
+readmes = ['README.md'] + [p for p in os.listdir('.') if re.fullmatch(r'README-\w+\.md', p)]
+texts = {p: open(p, encoding='utf-8').read() for p in readmes}
+
+known_presets = {'core', 'full'}
+for name, kind, source, presets, needs, probe, cost, measured in entries:
+    for suffix in ('README.md', 'README-it.md'):
+        guide = f'integrations/{name}/{suffix}'
+        if not os.path.isfile(guide):
+            print(f"FAIL: {name}: no {guide}")
+    for token in needs.split(','):
+        if token and token not in deps:
+            print(f"FAIL: {name}: needs '{token}', which has no row in scripts/loadout.deps")
+    if not presets or any(p not in known_presets for p in presets.split(',')):
+        print(f"FAIL: {name}: presets '{presets}' names something outside {sorted(known_presets)}")
+    if kind not in ('plugin', 'pypkg'):
+        print(f"FAIL: {name}: unknown kind '{kind}'")
+    first = cost.split()[0] if cost.split() else cost
+    for path, text in texts.items():
+        row = [l for l in text.splitlines() if l.strip().startswith('|') and f'| {name} ' in l]
+        if not row:
+            print(f"FAIL: {name}: no catalog row in {path}")
+        elif first not in ' '.join(row[0].split()):
+            print(f"FAIL: {name}: cost '{cost}' (first token '{first}') does not appear in the {path} catalog row")
+
+for token, row in deps.items():
+    if row[1] not in ('block', 'warn', 'runtime'):
+        print(f"FAIL: dep {token}: unknown severity '{row[1]}'")
+    if not os.path.exists(row[6]):
+        print(f"FAIL: dep {token}: docs path '{row[6]}' does not resolve")
+
+if not os.access('scripts/install-all.sh', os.X_OK):
+    print("FAIL: scripts/install-all.sh is not executable")
+if not os.access('scripts/loadout', os.X_OK):
+    print("FAIL: scripts/loadout is not executable")
+PY
+)
+if [ -n "$manifest_failures" ]; then
+  printf '%s\n' "$manifest_failures" >&2
+  manifest_fails=$(printf '%s\n' "$manifest_failures" | grep -c '^FAIL:')
+  fails=$((fails + manifest_fails))
+fi
+
 if [ "$fails" -gt 0 ]; then
   echo "$fails structural problem(s)" >&2
   exit 1
