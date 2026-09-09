@@ -83,5 +83,52 @@ it "preset membership"
 assert_status 0 manifest_in_preset graphify core
 assert_status 1 manifest_in_preset caveman core
 
+# --- probes --------------------------------------------------------------
+. scripts/lib/probe.sh
+
+# Make a command look missing without emptying PATH. Truncating PATH would take
+# awk, cut and sed with it, and every library under test calls those — the test
+# would then be measuring absent coreutils rather than an absent tool. Exported,
+# so a subprocess like `scripts/loadout doctor` sees it too.
+absent()  { LOADOUT_FAKE_ABSENT=$1; export LOADOUT_FAKE_ABSENT; }
+present() { unset LOADOUT_FAKE_ABSENT; }
+
+it "a present command satisfies its token"
+( stub_dir; stub git; assert_status 0 dep_present git )
+
+it "an absent command does not"
+( stub_dir; absent git; assert_status 1 dep_present git )
+
+it "a group token is satisfied by either member"
+( stub_dir; absent uv; stub pipx; assert_status 0 dep_present uv/pipx )
+
+it "docker does not apply off Intel macOS"
+( uname() { case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac; }
+  assert_status 1 dep_applies docker )
+
+it "docker applies on Intel macOS"
+( uname() { case "$1" in -s) echo Darwin ;; -m) echo x86_64 ;; esac; }
+  assert_status 0 dep_applies docker )
+
+it "headroom is blocked without a package manager"
+( stub_dir; absent uv,pipx
+  uname() { case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac; }
+  assert_contains "uv/pipx" "$(entry_deps headroom block)" )
+
+it "headroom is not blocked by docker on Linux"
+( stub_dir; stub uv
+  uname() { case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac; }
+  assert_eq "" "$(entry_deps headroom block)" )
+
+it "headroom is blocked by docker on Intel macOS"
+( stub_dir; absent docker; stub uv
+  uname() { case "$1" in -s) echo Darwin ;; -m) echo x86_64 ;; esac; }
+  assert_eq "docker" "$(entry_deps headroom block)" )
+
+it "an unset variable is a runtime gap, not a blocker"
+( stub_dir; stub uv; unset ANTHROPIC_BASE_URL
+  uname() { case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac; }
+  assert_eq "anthropic_base_url" "$(entry_deps headroom runtime)" )
+
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1
