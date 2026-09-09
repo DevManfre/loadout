@@ -19,25 +19,29 @@ trap 'rm -rf "$RESULTS"' EXIT
 : > "$RESULTS/fail"
 current=""
 
-_pass() { printf 'x' >> "$RESULTS/pass"; }
+# t_ prefix, not _pass/_fail: this file sources the installer's own libraries,
+# and scripts/lib/actions.sh defines _ok/_skip/_fail for its own tallies. A
+# collision here does not error — it silently replaces the harness's counter,
+# and the suite then prints "0 failed" while swallowing real failures.
+t_pass() { printf 'x' >> "$RESULTS/pass"; }
 
 it() { current=$1; }
 
-_fail() {
+t_fail() {
   printf 'FAIL: %s\n      %s\n' "$current" "$1" >&2
   printf 'x' >> "$RESULTS/fail"
 }
 
 assert_eq() {
-  if [ "$1" = "$2" ]; then _pass; else
-    _fail "expected [$1], got [$2]"
+  if [ "$1" = "$2" ]; then t_pass; else
+    t_fail "expected [$1], got [$2]"
   fi
 }
 
 assert_contains() {
   case "$2" in
-    *"$1"*) _pass ;;
-    *) _fail "expected to find [$1] in [$2]" ;;
+    *"$1"*) t_pass ;;
+    *) t_fail "expected to find [$1] in [$2]" ;;
   esac
 }
 
@@ -45,8 +49,8 @@ assert_status() {
   local want=$1; shift
   "$@" >/dev/null 2>&1
   local got=$?
-  if [ "$got" -eq "$want" ]; then _pass; else
-    _fail "expected exit $want, got $got from: $*"
+  if [ "$got" -eq "$want" ]; then t_pass; else
+    t_fail "expected exit $want, got $got from: $*"
   fi
 }
 
@@ -425,13 +429,6 @@ it "a failed package install is not counted as installed"
 
 # --- update --------------------------------------------------------------
 . scripts/lib/actions.sh
-# actions.sh defines its own _fail() (the mutation-failure tally); restore the
-# harness's version so assert_* failures keep landing in $RESULTS/fail instead
-# of silently being swallowed as a would-be "update" failure count.
-_fail() {
-  printf 'FAIL: %s\n      %s\n' "$current" "$1" >&2
-  printf 'x' >> "$RESULTS/fail"
-}
 it "update skips what is not installed"
 ( stub_dir; absent graphify,headroom; stub claude
   out=$(HOME=$(mktemp -d) scripts/loadout update --yes 2>&1)
@@ -562,6 +559,31 @@ it "a recorded, untouched asset is still updated"
   printf 'v2\n' > "$LOADOUT_ROOT/skills/example-asset/SKILL.md"
   HOME=$fake LOADOUT_STATE=$state scripts/loadout update --yes >/dev/null 2>&1
   assert_eq "v2" "$(cat "$fake/.claude/skills/example-asset/SKILL.md")" )
+
+# --- harness integrity ---------------------------------------------------
+# Runs last, after every production library has been sourced, and proves the
+# counters still work rather than assuming it.
+#
+# Deliberately does NOT verify via assert_eq/t_fail: the failure mode under
+# test is exactly "t_fail got shadowed and no longer records anything", and
+# an assertion that reports through t_fail cannot report that t_fail is
+# broken — it would just as silently be dropped, same as any other. So this
+# writes straight to $RESULTS/fail on a bad result, the same file t_fail
+# writes to, bypassing the function entirely.
+it "a deliberately failed assertion is recorded"
+count=$(
+  probe=$(mktemp -d)
+  RESULTS=$probe; export RESULTS
+  : > "$probe/pass"; : > "$probe/fail"
+  assert_eq one two 2>/dev/null
+  wc -c < "$probe/fail" | tr -d ' '
+)
+if [ "$count" = "1" ]; then
+  t_pass
+else
+  printf 'FAIL: %s\n      t_fail did not record a failure (count=%s)\n' "$current" "$count" >&2
+  printf 'x' >> "$RESULTS/fail"
+fi
 
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
