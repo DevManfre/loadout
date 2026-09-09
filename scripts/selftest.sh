@@ -594,6 +594,28 @@ out=$( stub_dir; stub claude
        HOME=$(mktemp -d) scripts/loadout remove caveman --yes 2>&1 )
 assert_contains "plugin disable" "$out"
 
+it "a failed uninstall is not counted as removed"
+( stub_dir; absent uv; stub claude; stub graphify; stub pipx 1
+  export HOME=$(mktemp -d)
+  OPT_YES=1
+  INSTALLED=0; PROBLEMS=0
+  remove_entry graphify >"$STUB/out" 2>&1
+  assert_contains "FAIL" "$(cat "$STUB/out")"
+  assert_eq 0 "$INSTALLED" )
+
+it "a plugin uninstall failure is reported, not counted"
+( stub_dir
+  cat > "$STUB/claude" <<'INNEREOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+[ "$1 $2" = "plugin list" ] && { echo '[{"id": "caveman@caveman"}]'; exit 0; }
+exit 1
+INNEREOF
+  chmod +x "$STUB/claude"
+  out=$(HOME=$(mktemp -d) scripts/loadout remove caveman --yes 2>&1)
+  assert_contains "FAIL" "$out"
+  assert_contains "claude plugin uninstall caveman failed" "$out" )
+
 # --- harness integrity ---------------------------------------------------
 # Runs last, after every production library has been sourced, and proves the
 # counters still work rather than assuming it.

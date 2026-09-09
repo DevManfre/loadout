@@ -240,9 +240,14 @@ remove_entry() {
       if run claude plugin uninstall "$name"; then _ok
       else _fail "claude plugin uninstall $name failed"; fi ;;
     pypkg)
+      # Same shape as install_entry and update_entry: a failed command must not
+      # fall through to _ok, or the summary counts one action as both failed
+      # and done.
       case "$(_python_installer)" in
-        uv)   run uv tool uninstall "${source%%\[*}" || _fail "uv tool uninstall failed" ;;
-        pipx) run pipx uninstall "${source%%\[*}" || _fail "pipx uninstall failed" ;;
+        uv)   run uv tool uninstall "${source%%\[*}" \
+                || { _fail "uv tool uninstall failed"; return 0; } ;;
+        pipx) run pipx uninstall "${source%%\[*}" \
+                || { _fail "pipx uninstall failed"; return 0; } ;;
         *)    _fail "no python installer on PATH"; return 0 ;;
       esac
       _ok ;;
