@@ -20,8 +20,8 @@ a `CLAUDE.md` section and two `PreToolUse` hooks into your setup.
 
 ## Install
 
-Not through loadout. A plugin cannot run a package manager, so this one installs
-itself — loadout carries the cost accounting and the verdicts below, nothing else.
+A plugin cannot run a package manager, so this one installs itself. `scripts/install-all.sh`
+runs the commands below for you; loadout carries the cost accounting and the verdicts, nothing else.
 
 ```bash
 uv tool install graphifyy        # or: pipx install graphifyy

@@ -16,25 +16,17 @@ capacità.
 
 ## Installazione
 
-Tramite loadout:
-
-```
-/plugin marketplace add DevManfre/loadout
-/plugin install superpowers@loadout
-```
-
-Direttamente dalla directory ufficiale di Anthropic, che lo distribuisce anch'essa:
+Dalla directory ufficiale di Anthropic, che fissa un commit specifico:
 
 ```
 /plugin install superpowers@claude-plugins-official
 ```
 
-Entrambe le vie scaricano lo stesso repository upstream, ma non la stessa revisione:
-la voce di loadout non ha uno `sha` e segue l'HEAD di upstream, mentre
-`claude-plugins-official` fissa un commit specifico — quindi le cifre in byte nella
-tabella sotto possono spostarsi sul percorso di loadout. Loadout non vendorizza nulla e
-non aggiunge codice — quello che aggiunge è il conteggio dei costi e i verdetti per
-singola skill qui sotto. Installalo dove preferisci; leggi questa pagina in ogni caso.
+`scripts/install-all.sh` esegue esattamente quel comando, insieme al resto del loadout.
+Loadout non gestisce un marketplace proprio, non vendorizza nulla e non aggiunge codice
+— quello che aggiunge è il conteggio dei costi e i verdetti per singola skill qui sotto.
+Le cifre in byte nella tabella sotto sono misurate sulla revisione fissata indicata
+sopra; un pin successivo può spostarle.
 
 ## Consumo di token
 

@@ -15,24 +15,16 @@ test new skills. It changes *how* the agent works rather than adding a capabilit
 
 ## Install
 
-Through loadout:
-
-```
-/plugin marketplace add DevManfre/loadout
-/plugin install superpowers@loadout
-```
-
-Straight from Anthropic's own directory, which also carries it:
+From Anthropic's official directory, which pins a specific commit:
 
 ```
 /plugin install superpowers@claude-plugins-official
 ```
 
-Both pull the same upstream repository, but not the same revision: loadout's entry has
-no `sha` and tracks upstream HEAD, while `claude-plugins-official` pins a specific
-commit — so the byte figures in the table below can drift on loadout's path. Loadout
-vendors nothing and adds no code — what it adds is the cost accounting and the
-per-skill verdicts below. Install it wherever you prefer; read this page either way.
+`scripts/install-all.sh` runs exactly that command, alongside the rest of the loadout.
+Loadout runs no marketplace of its own, vendors nothing and adds no code — what it adds
+is the cost accounting and the per-skill verdicts below. The byte figures in the table
+below were measured on the pinned revision named above; a later pin can move them.
 
 ## Token economy
 
