@@ -1,22 +1,26 @@
 #!/usr/bin/env bash
 # One-block install of everything loadout carries.
 #
-# There is deliberately no single command for this: the plugin CLI installs one
-# asset at a time, and third-party binaries (graphify) install themselves
-# because a plugin cannot run a package manager. This script is the seam that
-# chains both paths — it does not hide the cost. Every step prints its
-# always-on token price first and, unless --yes, asks before paying it.
+# Loadout is a guide, not a plugin: it vendors nothing and each asset comes
+# from its own upstream source. That means three different install paths —
+# the Claude Code plugin CLI for plugin entries, a package manager for
+# third-party binaries a plugin cannot ship (graphify), and a plain copy for
+# loadout's own skills and agents. This script is the seam that chains all
+# three, and it does not hide the cost: every step prints its always-on token
+# price first and, unless --yes, asks before paying it.
 #
-# Idempotent: an already-added marketplace, an already-installed plugin and an
-# already-installed graphify are reported and skipped, so re-running is safe.
+# Idempotent: an already-configured marketplace, an already-installed plugin,
+# binary or asset is reported and skipped, so re-running is safe.
 #
 # Usage: scripts/install-all.sh [--scope user|project|local] [--yes]
-#                              [--dry-run] [--skip-graphify]
+#                               [--dry-run] [--skip-graphify]
 set -uo pipefail
+
+ORIGIN_DIR=$PWD
 cd "$(dirname "$0")/.."
 
-MARKETPLACE_NAME=loadout
-MARKETPLACE_SOURCE=DevManfre/loadout
+OFFICIAL_NAME=claude-plugins-official
+OFFICIAL_SOURCE=anthropics/claude-plugins-official
 
 scope=user
 assume_yes=0
@@ -34,7 +38,10 @@ while [ $# -gt 0 ]; do
     -y|--yes) assume_yes=1; shift ;;
     -n|--dry-run) dry_run=1; shift ;;
     --skip-graphify) skip_graphify=1; shift ;;
-    -h|--help) awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"; exit 0 ;;
+    -h|--help)
+      awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"
+      exit 0
+      ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
@@ -43,6 +50,15 @@ case "$scope" in
   user|project|local) ;;
   *) echo "--scope must be user, project or local (got '$scope')" >&2; exit 2 ;;
 esac
+
+# Where loadout's own assets land. Plugin entries use the CLI's own --scope;
+# a plain copy needs the directory spelled out. project and local both mean
+# "the repo you ran this from", which is not this repo.
+if [ "$scope" = user ]; then
+  ASSET_ROOT=$HOME/.claude
+else
+  ASSET_ROOT=$ORIGIN_DIR/.claude
+fi
 
 skipped=0
 installed=0
@@ -64,70 +80,80 @@ confirm() {
   fi
   printf '   install? [y/N] '
   read -r reply
-  case "$reply" in [yY]|[yY][eE][sS]) return 0 ;; *) skip "declined"; return 1 ;; esac
+  case "$reply" in
+    [yY]|[yY][eE][sS]) return 0 ;;
+    *) skip "declined"; return 1 ;;
+  esac
 }
 
 run() {
   if [ "$dry_run" -eq 1 ]; then
-    printf '   would run: %s\n' "$*"
+    printf '   run: %s\n' "$*"
     return 0
   fi
   "$@"
 }
 
 if ! command -v claude >/dev/null 2>&1; then
-  echo "FAIL: the 'claude' CLI is not on PATH; nothing to install into" >&2
+  echo "FAIL: the 'claude' CLI is not on PATH; there is nothing to install into" >&2
   exit 1
 fi
 
-say "marketplace $MARKETPLACE_NAME"
+# --- Plugin entries -------------------------------------------------------
+# Loadout runs no marketplace of its own. Plugin entries are installed from
+# Anthropic's official directory, which pins a commit — so what you get is a
+# fixed revision, not upstream HEAD.
+
+say "marketplace $OFFICIAL_NAME"
 cost "none — an index, not an install"
-if claude plugin marketplace list 2>/dev/null | grep -Eq "^[[:space:]]*[^[:alnum:]]*[[:space:]]*${MARKETPLACE_NAME}$"; then
+if claude plugin marketplace list 2>/dev/null | grep -Eq "^[[:space:]]*[^[:alnum:]]*[[:space:]]*${OFFICIAL_NAME}$"; then
   skip "already configured"
 else
-  run claude plugin marketplace add "$MARKETPLACE_SOURCE" || fail "could not add $MARKETPLACE_SOURCE"
+  run claude plugin marketplace add "$OFFICIAL_SOURCE" || fail "could not add $OFFICIAL_SOURCE"
 fi
 
-# Plugin entries, in catalog order. Keep in sync with .claude-plugin/marketplace.json.
+# Keep in sync with the catalog in README.md.
 install_plugin() {
-  local name=$1 price=$2 installed_json
-  say "$name@$MARKETPLACE_NAME"
+  local name=$1 marketplace=$2 price=$3 installed_json
+
+  say "$name@$marketplace"
   cost "$price"
 
   installed_json=$(claude plugin list --json 2>/dev/null)
-  if printf '%s' "$installed_json" | grep -Fq "\"$name@$MARKETPLACE_NAME\""; then
+  if printf '%s' "$installed_json" | grep -Fq "\"$name@$marketplace\""; then
     skip "already installed"
     return 0
   fi
   # Same asset from another marketplace: installing a second copy duplicates
-  # its always-on cost, so leave the existing one alone.
+  # the always-on cost, so leave the existing one alone.
   if printf '%s' "$installed_json" | grep -Eq "\"id\": \"$name@[^\"]+\""; then
     skip "'$name' is already installed from another marketplace"
     return 0
   fi
 
   confirm || return 0
-  if run claude plugin install "$name@$MARKETPLACE_NAME" --scope "$scope" --yes; then
+  if run claude plugin install "$name@$marketplace" --scope "$scope" --yes; then
     installed=$((installed + 1))
   else
-    fail "claude plugin install $name@$MARKETPLACE_NAME failed"
+    fail "claude plugin install $name@$marketplace failed"
   fi
 }
 
-install_plugin loadout     "~0 tokens — loadout's own skills and sub-agents; the entry is empty for now"
-install_plugin superpowers "~800 tokens per session start, /clear and compaction"
+install_plugin superpowers "$OFFICIAL_NAME" \
+  "~800 tokens at every session start, /clear and compaction (SessionStart hook)"
 
-# graphify: a binary plus its own installers, so it cannot come through the
-# plugin index. Two installs, on purpose: 'graphify install' gives the
-# /graphify skill, 'graphify claude install' adds the always-on CLAUDE.md rules.
+# --- Third-party binaries -------------------------------------------------
+# graphify is a Python package, not a plugin: a plugin cannot run a package
+# manager, so this is the one entry that installs itself.
+
 if [ "$skip_graphify" -eq 1 ]; then
   say "graphify"
   skip "--skip-graphify"
 else
-  say "graphify (package manager, not a plugin)"
-  cost "~340 tokens per session with the always-on layer, ~145 without it, plus ~48-105 per read or grep while a graph exists"
+  say "graphify"
+  cost "~340 tokens per session, plus ~48-105 per read or grep while a graph exists"
   if command -v graphify >/dev/null 2>&1; then
-    skip "already on PATH ($(command -v graphify)) — update it with 'uv tool upgrade graphifyy' or 'pipx upgrade graphifyy'"
+    skip "already on PATH ($(command -v graphify)) — update with 'uv tool upgrade graphifyy' or 'pipx upgrade graphifyy'"
   elif ! confirm; then
     :
   else
@@ -138,13 +164,14 @@ else
     elif command -v pipx >/dev/null 2>&1; then
       run pipx install graphifyy || fail "pipx install graphifyy failed"
     else
-      fail "neither uv nor pipx is on PATH; install one, then re-run (avoid 'pip install' — see integrations/graphify/README.md)"
+      fail "neither uv nor pipx is on PATH; install one and re-run (avoid 'pip install' — see integrations/graphify/README.md)"
     fi
+
     if [ "$problems" -eq 0 ]; then
-      if [ "$scope" = project ]; then
-        run graphify install --project || fail "graphify install --project failed"
-      else
+      if [ "$scope" = user ]; then
         run graphify install || fail "graphify install failed"
+      else
+        run graphify install --project || fail "graphify install --project failed"
       fi
       run graphify claude install || fail "graphify claude install failed"
       installed=$((installed + 1))
@@ -152,10 +179,51 @@ else
   fi
 fi
 
+# --- Loadout's own assets -------------------------------------------------
+# A plain copy into $ASSET_ROOT. No plugin index sits in between, so what
+# lands on disk is exactly what is in this repo.
+
+copy_assets() {
+  local kind=$1 src=$2 dest=$3 base found=0
+
+  for base in $src; do
+    [ -e "$base" ] || continue
+    case "$base" in */.gitkeep) continue ;; esac
+    found=1
+    if [ -e "$dest/$(basename "$base")" ]; then
+      skip "$kind $(basename "$base") already installed in $dest"
+      continue
+    fi
+    confirm || continue
+    run mkdir -p "$dest" || { fail "could not create $dest"; continue; }
+    if run cp -R "$base" "$dest/"; then
+      installed=$((installed + 1))
+    else
+      fail "could not copy $base into $dest"
+    fi
+  done
+
+  [ "$found" -eq 1 ] || return 1
+  return 0
+}
+
+say "loadout's own skills"
+cost "one skill description each in the skill index; bodies load only when invoked"
+copy_assets skill 'skills/*/' "$ASSET_ROOT/skills" || skip "none shipped yet"
+
+say "loadout's own sub-agents"
+cost "one description each in the agent index"
+copy_assets agent 'agents/*.md' "$ASSET_ROOT/agents" || skip "none shipped yet"
+
+say "loadout's own workflows"
+cost "none until a workflow is run"
+copy_assets workflow 'workflows/*.md' "$ASSET_ROOT/workflows" || skip "none shipped yet"
+
 printf '\n== done: %d installed, %d skipped, %d failed\n' "$installed" "$skipped" "$problems"
 if [ "$dry_run" -eq 1 ]; then
   echo "   (dry run — nothing was changed)"
 fi
 echo "   too heavy in practice? '/plugin disable <name>' drops it from context without uninstalling."
+
 [ "$problems" -gt 0 ] && exit 1
 exit 0
