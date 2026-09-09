@@ -2,7 +2,13 @@
 # Answering "is this present on this machine". Read-only: nothing here
 # installs, starts or configures anything.
 
-platform_id() { printf '%s/%s' "$(uname -s)" "$(uname -m)"; }
+platform_id() {
+  if [ -n "${LOADOUT_FAKE_PLATFORM:-}" ]; then
+    printf '%s' "$LOADOUT_FAKE_PLATFORM"
+    return 0
+  fi
+  printf '%s/%s' "$(uname -s)" "$(uname -m)"
+}
 
 # 0 when the token is relevant on this platform.
 dep_applies() {

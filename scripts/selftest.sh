@@ -141,6 +141,37 @@ it "an unset variable is a runtime gap, not a blocker"
   uname() { case "$1" in -s) echo Linux ;; -m) echo x86_64 ;; esac; }
   assert_eq "anthropic_base_url" "$(entry_deps headroom runtime)" )
 
+# --- entrypoint and doctor ----------------------------------------------
+it "help names every subcommand"
+help_text=$(scripts/loadout --help)
+for sub in install update status doctor remove list; do
+  assert_contains "$sub" "$help_text"
+done
+
+it "an unknown subcommand exits 2"
+assert_status 2 scripts/loadout frobnicate
+
+it "doctor reports a blocker with why, fix and docs"
+out=$( stub_dir; absent uv,pipx; stub claude; stub git
+       LOADOUT_FAKE_PLATFORM=Linux/x86_64 scripts/loadout doctor 2>&1 )
+assert_contains "cannot install here" "$out"
+assert_contains "why:" "$out"
+assert_contains "fix:" "$out"
+assert_contains "integrations/graphify/README.md" "$out"
+
+it "doctor exits 1 when something is blocked"
+( stub_dir; absent uv,pipx; stub claude; stub git
+  assert_status 1 env LOADOUT_FAKE_PLATFORM=Linux/x86_64 scripts/loadout doctor )
+
+it "doctor exits 0 when everything is satisfied"
+( stub_dir; stub claude; stub git; stub uv; stub docker
+  assert_status 0 env LOADOUT_FAKE_PLATFORM=Linux/x86_64 scripts/loadout doctor )
+
+it "doctor mutates nothing"
+( stub_dir; stub claude; stub git; stub uv
+  LOADOUT_FAKE_PLATFORM=Linux/x86_64 scripts/loadout doctor >/dev/null 2>&1
+  assert_eq "" "$(grep -E '(install|upgrade|update)' "$STUB_CALLS")" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

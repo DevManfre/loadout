@@ -1,0 +1,104 @@
+#!/usr/bin/env bash
+# Install, update and inspect the loadout.
+#
+# Loadout is a guide, not a plugin: it vendors nothing, and each entry comes
+# from its own upstream. This script is the seam that drives three install
+# paths — the Claude Code plugin CLI, a package manager, and a plain copy for
+# loadout's own assets — without ever hiding what an entry costs in context.
+#
+# Usage: scripts/loadout <command> [options]
+#
+# Commands:
+#   install            choose what to install, then install it
+#   update             upgrade what is already installed
+#   status             what is installed, at what pin, what it costs
+#   doctor             dependency report; changes nothing
+#   remove <entry>     uninstall one entry
+#   list               the catalog as the manifest sees it
+#
+# Options:
+#   --preset <name>    core or full (default: full)
+#   --only a,b         restrict to these entries
+#   --except a,b       everything but these entries
+#   --scope <s>        user, project or local (default: user)
+#   -y, --yes          accept every printed cost up front (required with no TTY)
+#   -n, --dry-run      print every step and change nothing
+#   -h, --help         this text
+set -uo pipefail
+
+ORIGIN_DIR=$PWD
+cd "$(dirname "$0")/.."
+LOADOUT_ROOT=$PWD
+export LOADOUT_ROOT ORIGIN_DIR
+
+. scripts/lib/manifest.sh
+. scripts/lib/probe.sh
+. scripts/lib/ui.sh
+
+usage() { awk 'NR>1 && /^#/ { sub(/^# ?/, ""); print; next } NR>1 { exit }' "$0"; }
+
+SUBCOMMAND=""
+OPT_YES=0
+OPT_DRY_RUN=0
+OPT_SCOPE=user
+OPT_PRESET=full
+OPT_ONLY=""
+OPT_EXCEPT=""
+ARGS=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    -y|--yes) OPT_YES=1; shift ;;
+    -n|--dry-run) OPT_DRY_RUN=1; shift ;;
+    --scope) OPT_SCOPE=${2:?--scope needs a value}; shift 2 ;;
+    --scope=*) OPT_SCOPE=${1#*=}; shift ;;
+    --preset) OPT_PRESET=${2:?--preset needs a value}; shift 2 ;;
+    --preset=*) OPT_PRESET=${1#*=}; shift ;;
+    --only) OPT_ONLY=${2:?--only needs a value}; shift 2 ;;
+    --only=*) OPT_ONLY=${1#*=}; shift ;;
+    --except) OPT_EXCEPT=${2:?--except needs a value}; shift 2 ;;
+    --except=*) OPT_EXCEPT=${1#*=}; shift ;;
+    # Kept so the old flags in the README and in people's history keep working.
+    --skip-graphify) OPT_EXCEPT="${OPT_EXCEPT:+$OPT_EXCEPT,}graphify"
+      note "--skip-graphify is deprecated; use --except graphify"; shift ;;
+    --skip-headroom) OPT_EXCEPT="${OPT_EXCEPT:+$OPT_EXCEPT,}headroom"
+      note "--skip-headroom is deprecated; use --except headroom"; shift ;;
+    -*) printf 'unknown option: %s\n' "$1" >&2; exit 2 ;;
+    *)
+      if [ -z "$SUBCOMMAND" ]; then SUBCOMMAND=$1; else ARGS="${ARGS:+$ARGS }$1"; fi
+      shift ;;
+  esac
+done
+
+case "$OPT_SCOPE" in
+  user|project|local) ;;
+  *) printf -- '--scope must be user, project or local (got %s)\n' "$OPT_SCOPE" >&2; exit 2 ;;
+esac
+
+cmd_doctor() {
+  local name blocked=0 token
+  for name in $(manifest_names); do
+    say "$name"
+    cost "$(manifest_field "$name" 7)"
+    for token in $(entry_deps "$name" block); do
+      blocked=1
+      printf '   [!] %s — cannot install here (missing: %s)\n' "$name" "$token"
+      explain_dep "$token" "$name"
+    done
+    for token in $(entry_deps "$name" warn); do
+      printf '   [~] %s — installable, degraded (missing: %s)\n' "$name" "$token"
+      explain_dep "$token" "$name"
+    done
+    [ -n "$(entry_deps "$name" block)$(entry_deps "$name" warn)" ] || note "ready"
+  done
+  return "$blocked"
+}
+
+case "$SUBCOMMAND" in
+  doctor) cmd_doctor ;;
+  ""|help) usage; exit 0 ;;
+  install|update|status|remove|list)
+    printf 'not implemented yet: %s\n' "$SUBCOMMAND" >&2; exit 3 ;;
+  *) printf 'unknown command: %s\n' "$SUBCOMMAND" >&2; usage >&2; exit 2 ;;
+esac
