@@ -159,7 +159,13 @@ fi
 # README's catalog row, not the whole field: the manifest also carries a
 # compact per-call display suffix ('+60/prompt', '+48-105/toolcall') that no
 # README row quotes verbatim, while the always-on number is what every row
-# states.
+# states. The comparison itself is digit-only, so a mirror's localised
+# thousands separator ('~2.480' in Italian vs '~2,480' in English) is not
+# mistaken for drift, while a real change to the number still fails in every
+# language. A cost token with no digits at all ('none') is a word, not a
+# figure, so it is checked against the canonical README.md only -- a mirror
+# is free to translate it, and the existing reachability and parity checks
+# already require the mirror to carry a catalog row for the entry at all.
 manifest_failures=$(LOADOUT_ROOT=$PWD python3 <<'PY'
 import os, re, sys
 
@@ -175,6 +181,9 @@ def table(path, want):
             continue
         rows.append(cells)
     return rows
+
+def digits(s):
+    return re.sub(r'\D', '', s)
 
 entries = table('scripts/loadout.manifest', 8)
 deps = {r[0]: r for r in table('scripts/loadout.deps', 7)}
@@ -194,13 +203,19 @@ for name, kind, source, presets, needs, probe, cost, measured in entries:
         print(f"FAIL: {name}: presets '{presets}' names something outside {sorted(known_presets)}")
     if kind not in ('plugin', 'pypkg'):
         print(f"FAIL: {name}: unknown kind '{kind}'")
-    first = cost.split()[0] if cost.split() else cost
+    head = cost.split()[0] if cost.split() else ''
+    want = digits(head)
     for path, text in texts.items():
         row = [l for l in text.splitlines() if l.strip().startswith('|') and f'| {name} ' in l]
         if not row:
             print(f"FAIL: {name}: no catalog row in {path}")
-        elif first not in ' '.join(row[0].split()):
-            print(f"FAIL: {name}: cost '{cost}' (first token '{first}') does not appear in the {path} catalog row")
+            continue
+        if want:
+            if want not in digits(row[0]):
+                print(f"FAIL: {name}: cost '{head}' does not appear in the {path} catalog row")
+        elif path == 'README.md':
+            if head not in row[0]:
+                print(f"FAIL: {name}: cost '{head}' does not appear in the {path} catalog row")
 
 for token, row in deps.items():
     if row[1] not in ('block', 'warn', 'runtime'):

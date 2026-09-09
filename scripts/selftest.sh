@@ -649,6 +649,25 @@ it "validate catches a pipe inside a data field"
   cd "$work" && assert_status 1 scripts/validate.sh
   rm -rf "$work" )
 
+# The cost check is digit-only, so a mirror's localised thousands separator
+# is not mistaken for drift while a real change to the number still fails.
+# This test only proves that distinction because the repo's real
+# README-it.md carries caveman's cost as '~2.480' (Italian formatting) next
+# to the manifest's '~2,480' (English formatting) -- if a future edit ever
+# makes the two cells match character-for-character, this test stops proving
+# anything and the next one (which forces an actual digit change) becomes
+# the only one still doing real work.
+it "a localised thousands separator is not drift"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  cd "$work" && assert_status 0 scripts/validate.sh
+  rm -rf "$work" )
+
+it "a changed cost number fails in every language"
+( work=$(mktemp -d); cp -R "$LOADOUT_ROOT"/. "$work/"
+  sed -i 's/~2\.480/~2.900/' "$work/README-it.md"
+  cd "$work" && assert_status 1 scripts/validate.sh
+  rm -rf "$work" )
+
 # --- harness integrity ---------------------------------------------------
 # Runs last, after every production library has been sourced, and proves the
 # counters still work rather than assuming it.
