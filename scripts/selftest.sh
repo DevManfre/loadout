@@ -172,6 +172,42 @@ it "doctor mutates nothing"
   LOADOUT_FAKE_PLATFORM=Linux/x86_64 scripts/loadout doctor >/dev/null 2>&1
   assert_eq "" "$(grep -E '(install|upgrade|update)' "$STUB_CALLS")" )
 
+# --- state, list, status -------------------------------------------------
+it "an installed plugin is detected from the CLI's json"
+( stub_dir
+  cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "caveman@caveman"}]'
+exit 0
+EOF
+  chmod +x "$STUB/claude"
+  assert_status 0 entry_installed caveman
+  assert_status 1 entry_installed superpowers )
+
+it "an installed binary is detected on PATH"
+( stub_dir; stub graphify; assert_status 0 entry_installed graphify )
+
+it "list prints every entry with its cost"
+out=$(scripts/loadout list)
+assert_contains "headroom" "$out"
+assert_contains "~2,480" "$out"
+
+it "status shows the measured pin next to the installed one"
+out=$( stub_dir; stub claude; scripts/loadout status 2>&1 )
+assert_contains "measured" "$out"
+assert_contains "v0.37.0" "$out"
+
+it "status reports a runtime gap on an installed entry"
+( stub_dir; stub claude; stub headroom; unset ANTHROPIC_BASE_URL
+  out=$(scripts/loadout status 2>&1)
+  assert_contains "not in the path" "$out" )
+
+it "status mutates nothing"
+( stub_dir; stub claude; stub graphify
+  scripts/loadout status >/dev/null 2>&1
+  assert_eq "" "$(grep -E '(plugin install|tool install|upgrade)' "$STUB_CALLS")" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"

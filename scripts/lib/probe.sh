@@ -53,3 +53,42 @@ entry_deps() {
     dep_present "$token" || printf '%s\n' "$token"
   done
 }
+
+# The marketplace an entry's plugin comes from. Column 3 is either a plain
+# marketplace name or `name=owner/repo` when the marketplace must be added.
+plugin_marketplace() {
+  local source
+  source=$(manifest_field "$1" 3) || return 1
+  printf '%s' "${source%%=*}"
+}
+
+# Install state is probed, never remembered: a state file would rot the first
+# time somebody uninstalled something by hand.
+entry_installed() {
+  local probe
+  probe=$(manifest_field "$1" 6) || return 1
+  case "$probe" in
+    plugin:*)
+      claude plugin list --json 2>/dev/null | grep -Fq "\"${probe#plugin:}@" ;;
+    bin:*)
+      have_cmd "${probe#bin:}" ;;
+    *) return 1 ;;
+  esac
+}
+
+# The pin on disk for a plugin, the reported version for a binary, '-' when
+# the entry is not installed or will not say.
+entry_version() {
+  local name=$1 probe pin dir
+  probe=$(manifest_field "$name" 6) || return 1
+  entry_installed "$name" || { printf '%s' '-'; return 0; }
+  case "$probe" in
+    plugin:*)
+      dir="$HOME/.claude/plugins/cache/$(plugin_marketplace "$name")/${probe#plugin:}"
+      pin=$(ls -1 "$dir" 2>/dev/null | head -1)
+      printf '%s' "${pin:--}" ;;
+    bin:*)
+      pin=$("${probe#bin:}" --version 2>/dev/null | head -1 | tr -dc '0-9.v' )
+      printf '%s' "${pin:--}" ;;
+  esac
+}

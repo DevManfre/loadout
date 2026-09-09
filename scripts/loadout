@@ -95,10 +95,50 @@ cmd_doctor() {
   return "$blocked"
 }
 
+cmd_list() {
+  printf '%-12s %-7s %-10s %-24s %s\n' entry kind presets cost measured
+  local name
+  for name in $(manifest_names); do
+    printf '%-12s %-7s %-10s %-24s %s\n' \
+      "$name" "$(manifest_field "$name" 2)" "$(manifest_field "$name" 4)" \
+      "$(manifest_field "$name" 7)" "$(manifest_field "$name" 8)"
+  done
+}
+
+cmd_status() {
+  printf '%-12s %-16s %-10s %-24s %s\n' entry installed measured cost note
+  local name installed measured drift gap
+  for name in $(manifest_names); do
+    if entry_installed "$name"; then
+      installed=$(entry_version "$name")
+    else
+      installed="not installed"
+    fi
+    measured=$(manifest_field "$name" 8)
+    drift=""
+    case "$installed" in
+      "not installed"|-) ;;
+      "$measured") ;;
+      *) drift="DRIFT" ;;
+    esac
+    gap=""
+    if [ "$installed" != "not installed" ]; then
+      for token in $(entry_deps "$name" runtime); do
+        gap="installed, not in the path ($token)"
+      done
+    fi
+    printf '%-12s %-16s %-10s %-24s %s\n' \
+      "$name" "$installed" "$measured" "$(manifest_field "$name" 7)" "${drift}${drift:+ }${gap}"
+  done
+  printf '\n   projected cost of an installed plugin: claude plugin details <name>\n'
+}
+
 case "$SUBCOMMAND" in
   doctor) cmd_doctor ;;
   ""|help) usage; exit 0 ;;
-  install|update|status|remove|list)
+  list) cmd_list ;;
+  status) cmd_status ;;
+  install|update|remove)
     printf 'not implemented yet: %s\n' "$SUBCOMMAND" >&2; exit 3 ;;
   *) printf 'unknown command: %s\n' "$SUBCOMMAND" >&2; usage >&2; exit 2 ;;
 esac
