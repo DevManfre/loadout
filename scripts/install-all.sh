@@ -4,7 +4,7 @@
 # Loadout is a guide, not a plugin: it vendors nothing and each asset comes
 # from its own upstream source. That means three different install paths —
 # the Claude Code plugin CLI for plugin entries, a package manager for
-# third-party binaries a plugin cannot ship (graphify), and a plain copy for
+# third-party binaries a plugin cannot ship (graphify, headroom), and a plain copy for
 # loadout's own skills and agents. This script is the seam that chains all
 # three, and it does not hide the cost: every step prints its always-on token
 # price first and, unless --yes, asks before paying it.
@@ -13,7 +13,7 @@
 # binary or asset is reported and skipped, so re-running is safe.
 #
 # Usage: scripts/install-all.sh [--scope user|project|local] [--yes]
-#                               [--dry-run] [--skip-graphify]
+#                               [--dry-run] [--skip-graphify] [--skip-headroom]
 set -uo pipefail
 
 ORIGIN_DIR=$PWD
@@ -30,6 +30,7 @@ scope=user
 assume_yes=0
 dry_run=0
 skip_graphify=0
+skip_headroom=0
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -42,6 +43,7 @@ while [ $# -gt 0 ]; do
     -y|--yes) assume_yes=1; shift ;;
     -n|--dry-run) dry_run=1; shift ;;
     --skip-graphify) skip_graphify=1; shift ;;
+    --skip-headroom) skip_headroom=1; shift ;;
     -h|--help)
       awk 'NR>1 && /^#/ {sub(/^# ?/, ""); print; next} NR>1 {exit}' "$0"
       exit 0
@@ -190,6 +192,43 @@ else
       fi
       run graphify claude install || fail "graphify claude install failed"
       installed=$((installed + 1))
+    fi
+  fi
+fi
+
+# headroom is a proxy, not a plugin: it never enters the context window, so it
+# cannot be installed through the plugin CLI either. The binary is installed
+# here; pointing the agent at it is one env var the script prints rather than
+# writes, because editing a shell profile is not this script's business.
+
+if [ "$skip_headroom" -eq 1 ]; then
+  say "headroom"
+  skip "--skip-headroom"
+else
+  say "headroom"
+  cost "none — the proxy is outside the context window; it costs ~2.2s per request instead"
+  if command -v headroom >/dev/null 2>&1; then
+    skip "already on PATH ($(command -v headroom)) — update with 'headroom update'"
+  elif ! confirm; then
+    :
+  else
+    # [proxy] only: the [ml] extra measured 2,264ms per call for 3,499 tokens
+    # (integrations/headroom/README.md), which is the wrong side of that trade.
+    if command -v uv >/dev/null 2>&1; then
+      run uv tool install --python 3.13 "headroom-ai[proxy]" \
+        || fail "uv tool install headroom-ai[proxy] failed"
+    elif command -v pipx >/dev/null 2>&1; then
+      run pipx install "headroom-ai[proxy]" || fail "pipx install headroom-ai[proxy] failed"
+    else
+      fail "neither uv nor pipx is on PATH; install one and re-run (see integrations/headroom/README.md)"
+    fi
+
+    if [ "$problems" -eq 0 ]; then
+      installed=$((installed + 1))
+      printf '   start it, then point the agent at it:\n'
+      printf '     headroom proxy --port 8787\n'
+      printf '     export ANTHROPIC_BASE_URL=http://127.0.0.1:8787\n'
+      printf '   telemetry is on by default upstream; HEADROOM_BEACON=off turns it off.\n'
     fi
   fi
 fi
