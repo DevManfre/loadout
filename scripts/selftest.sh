@@ -424,6 +424,14 @@ it "a failed package install is not counted as installed"
   assert_eq "" "$(grep 'graphify claude install' "$STUB_CALLS")" )
 
 # --- update --------------------------------------------------------------
+. scripts/lib/actions.sh
+# actions.sh defines its own _fail() (the mutation-failure tally); restore the
+# harness's version so assert_* failures keep landing in $RESULTS/fail instead
+# of silently being swallowed as a would-be "update" failure count.
+_fail() {
+  printf 'FAIL: %s\n      %s\n' "$current" "$1" >&2
+  printf 'x' >> "$RESULTS/fail"
+}
 it "update skips what is not installed"
 ( stub_dir; absent graphify,headroom; stub claude
   out=$(HOME=$(mktemp -d) scripts/loadout update --yes 2>&1)
@@ -471,7 +479,7 @@ assert_contains "an update moves to whatever upstream publishes now" "$out"
 
 it "the pin gate refuses without --yes and no TTY"
 ( stub_dir; stub claude
-  assert_status 1 env LOADOUT_FAKE_AVAILABLE=v9.9.9 HOME=$(mktemp -d) \
+  assert_status 1 env HOME=$(mktemp -d) \
     scripts/loadout update --only caveman < /dev/null )
 
 it "no entry escapes the gate for want of a version"
@@ -530,6 +538,30 @@ it "a locally edited own asset is never overwritten"
   out=$(HOME=$fake_home LOADOUT_STATE=$state scripts/loadout update --yes 2>&1)
   assert_contains "modified locally" "$out"
   assert_eq "edited by hand" "$(cat "$fake_home/.claude/skills/example-asset/SKILL.md")" )
+
+it "an asset with no state record is never overwritten"
+( stub_dir; absent graphify,headroom; stub claude
+  fake=$(mktemp -d); state=$fake/state
+  : > "$state"
+  mkdir -p "$LOADOUT_ROOT/skills/example-asset" "$fake/.claude/skills/example-asset"
+  trap 'rm -rf "$LOADOUT_ROOT/skills/example-asset"' EXIT
+  printf 'upstream\n' > "$LOADOUT_ROOT/skills/example-asset/SKILL.md"
+  printf 'edited by hand\n' > "$fake/.claude/skills/example-asset/SKILL.md"
+  out=$(HOME=$fake LOADOUT_STATE=$state scripts/loadout update --yes 2>&1)
+  assert_contains "not recorded" "$out"
+  assert_eq "edited by hand" "$(cat "$fake/.claude/skills/example-asset/SKILL.md")" )
+
+it "a recorded, untouched asset is still updated"
+( stub_dir; absent graphify,headroom; stub claude
+  fake=$(mktemp -d); state=$fake/state
+  mkdir -p "$LOADOUT_ROOT/skills/example-asset" "$fake/.claude/skills"
+  trap 'rm -rf "$LOADOUT_ROOT/skills/example-asset"' EXIT
+  printf 'v1\n' > "$LOADOUT_ROOT/skills/example-asset/SKILL.md"
+  cp -R "$LOADOUT_ROOT/skills/example-asset" "$fake/.claude/skills/"
+  printf 'example-asset·%s\n' "$(_asset_sum "$fake/.claude/skills/example-asset")" > "$state"
+  printf 'v2\n' > "$LOADOUT_ROOT/skills/example-asset/SKILL.md"
+  HOME=$fake LOADOUT_STATE=$state scripts/loadout update --yes >/dev/null 2>&1
+  assert_eq "v2" "$(cat "$fake/.claude/skills/example-asset/SKILL.md")" )
 
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")

@@ -184,7 +184,7 @@ update_entry() {
 # one unrecoverable thing an updater can do.
 update_own_assets() {
   local dest_root=$1 state=${LOADOUT_STATE:-$HOME/.claude/loadout/state}
-  local src base dest recorded current
+  local src base dest recorded current upstream
   for src in skills/*/ agents/*.md workflows/*.md; do
     [ -e "$src" ] || continue
     case "$src" in */.gitkeep) continue ;; esac
@@ -196,16 +196,29 @@ update_own_assets() {
     base=$(basename "${src%/}")
     [ -e "$dest/$base" ] || { _skip "$base not installed"; continue; }
 
-    recorded=$(grep "^$base·" "$state" 2>/dev/null | awk -F'·' '{print $2}')
+    recorded=$(awk -F'·' -v n="$base" '$1 == n { print $2 }' "$state" 2>/dev/null)
     current=$(_asset_sum "$dest/$base")
-    if [ -n "$recorded" ] && [ "$recorded" != "$current" ]; then
+    upstream=$(_asset_sum "${src%/}")
+
+    [ "$current" != "$upstream" ] || { _skip "$base already current"; continue; }
+
+    # Update only what we can prove we wrote. A checksum that does not match —
+    # or no record at all, because the state file was lost or the asset predates
+    # it — means the copy on disk is not provably ours, and it is not ours to
+    # overwrite. Failing closed costs a skipped update; failing open costs the
+    # user's edits.
+    if [ -z "$recorded" ] || [ "$recorded" != "$current" ]; then
       say "$base"
-      note "modified locally: $dest/$base"
+      if [ -z "$recorded" ]; then
+        note "not recorded as installed by loadout: $dest/$base"
+      else
+        note "modified locally: $dest/$base"
+      fi
       note "leaving it alone. To take the repo's version: cp -R '$src' '$dest/' after saving yours."
-      _skip "locally modified"
+      _skip "not provably ours"
       continue
     fi
-    [ "$(_asset_sum "$src")" != "$current" ] || { _skip "$base already current"; continue; }
+
     say "$base"
     if run cp -R "${src%/}" "$dest/"; then _record_asset "$base" "$src"; _ok
     else _fail "could not update $base"; fi
