@@ -60,9 +60,14 @@ install_entry() {
            --scope "$OPT_SCOPE" --yes; then _ok
       else _fail "claude plugin install $name failed"; fi ;;
     pypkg)
+      # A failed package install must not fall through: _post_install_pypkg
+      # would run graphify's own setup against a package that never landed,
+      # and _ok would count the failure as an install.
       case "$(_python_installer)" in
-        uv)   run uv tool install "$source" || _fail "uv tool install $source failed" ;;
-        pipx) run pipx install "$source" || _fail "pipx install $source failed" ;;
+        uv)   run uv tool install "$source" \
+                || { _fail "uv tool install $source failed"; return 0; } ;;
+        pipx) run pipx install "$source" \
+                || { _fail "pipx install $source failed"; return 0; } ;;
         *)    _fail "no python installer on PATH"; return 0 ;;
       esac
       _post_install_pypkg "$name"

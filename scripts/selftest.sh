@@ -389,6 +389,40 @@ it "loadout's own assets are copied, and never twice"
   HOME=$fake_home scripts/loadout install --only nothing --yes >/dev/null 2>&1
   assert_eq "0" "$([ -f "$fake_home/.claude/skills/example-asset/SKILL.md" ]; echo $?)" )
 
+# Ordering, not just presence: the earlier test only checked the cost line
+# existed, so it stayed green even with cost printed after the mutation. A
+# stub's own call log has no timestamps, so ordering is only observable in
+# dry-run output, where run() prints "run: ..." to stdout instead of calling
+# the stub.
+it "install prints the cost before it runs the command"
+( stub_dir; stub claude; stub git
+  out=$(HOME=$(mktemp -d) scripts/loadout install --only superpowers --yes --dry-run 2>&1)
+  cost_at=$(printf '%s\n' "$out" | grep -n 'cost: ~800' | head -1 | cut -d: -f1)
+  run_at=$(printf '%s\n' "$out" | grep -n 'run: claude plugin install' | head -1 | cut -d: -f1)
+  assert_status 0 test "${cost_at:-0}" -gt 0
+  assert_status 0 test "${cost_at:-0}" -lt "${run_at:-0}" )
+
+# Stronger than checking one path: a dry run must leave the fake HOME
+# completely empty, which catches any future unwrapped mutation, not just
+# the one already found.
+it "a dry run writes nothing at all under HOME"
+( stub_dir; absent graphify; stub claude; stub git; stub uv; stub graphify
+  fake=$(mktemp -d)
+  HOME=$fake scripts/loadout install --yes --dry-run >/dev/null 2>&1
+  assert_eq "" "$(find "$fake" -mindepth 1 -print -quit)" )
+
+it "no marketplace is added for an entry whose source names none"
+( stub_dir; stub claude; stub git
+  HOME=$(mktemp -d) scripts/loadout install --only superpowers --yes >/dev/null 2>&1
+  assert_eq "" "$(grep 'marketplace add' "$STUB_CALLS")" )
+
+it "a failed package install is not counted as installed"
+( stub_dir; absent uv,graphify; stub claude; stub graphify; stub pipx 1
+  out=$(HOME=$(mktemp -d) scripts/loadout install --only graphify --yes 2>&1)
+  assert_contains "FAIL" "$out"
+  assert_contains "0 installed" "$out"
+  assert_eq "" "$(grep 'graphify claude install' "$STUB_CALLS")" )
+
 pass=$(wc -c < "$RESULTS/pass")
 fail=$(wc -c < "$RESULTS/fail")
 printf '\n%d passed, %d failed\n' "$pass" "$fail"
