@@ -5,3 +5,5 @@ docs/superpowers/
 # design docs stay local: the shipped product is the assets and their catalog
 docs/specs/
 docs/plans/
+# graphify output is generated and not source
+graphify-out/
