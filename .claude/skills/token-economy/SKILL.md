@@ -1,9 +1,9 @@
 ---
-name: token-audit
-description: Use when asked to audit or cut the token cost of a Claude Code setup, or on /token-audit.
+name: token-economy
+description: Use when asked to audit or cut the token cost of a Claude Code setup, or on /token-economy.
 ---
 
-# token-audit
+# token-economy
 
 Audit every Claude Code component (project + global) for token economy: measure
 real costs, find waste, propose fixes with projected savings. **Never apply a
