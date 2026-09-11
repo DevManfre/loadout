@@ -646,7 +646,13 @@ it "a failed package install is not counted as installed"
 ( stub_dir; absent uv,graphify; stub claude; stub graphify; stub pipx 1
   out=$(HOME=$(mktemp -d) scripts/loadout install --only graphify --yes 2>&1)
   assert_contains "FAIL" "$out"
-  assert_contains "0 installed" "$out"
+  # own assets (skills/*/ etc.) are copied on every install and count as
+  # installed, so the summary must show exactly them — and graphify only
+  # under "failed", never "installed".
+  own=$(find skills agents workflows -mindepth 1 -maxdepth 1 \
+        ! -name .gitkeep 2>/dev/null | wc -l)
+  assert_contains "$own installed" "$out"
+  assert_contains "1 failed" "$out"
   assert_eq "" "$(grep 'graphify claude install' "$STUB_CALLS")" )
 
 # --- update --------------------------------------------------------------

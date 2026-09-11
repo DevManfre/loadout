@@ -16,7 +16,7 @@ belong here.
 | Codebase questions | `graphify query "<q>"` (hook enforces); after edits `graphify update .` |
 
 Skills present themselves via their descriptions (catalog-entry, readme-sync,
-commit-convention, token-economy).
+commit-convention; token-economy now ships from `skills/`).
 
 ## Rules no hook can block
 

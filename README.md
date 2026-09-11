@@ -129,8 +129,12 @@ than it saves does not belong in a loadout, however good it looks in its own REA
 
 ### Own assets
 
-None yet. `skills/`, `agents/` and `workflows/` are their home, and the same install
-script copies them into place once they land.
+Installed by the same script, as a plain copy of the directory — no plugin index in
+between.
+
+| Name | What it does | What you get back | Always-on cost | Docs |
+|---|---|---|---|---|
+| token-economy | Audits every component of a Claude Code setup for token cost — measured by script, never by eye — and states the design rules for writing new skills, agents and CLAUDE.md files lean from the start | An audit report priced in always-on tokens with a per-finding risk column; one applied finding typically pays back the skill's own cost hundreds of times over. Measured here: this repo's CLAUDE.md fell from a rule list to a ~430-token index using its dimensions | ~43 tokens (description); ~1,500-token body and two shell scripts load only on invocation | [guide](skills/token-economy/SKILL.md) |
 
 ## Layout
 
