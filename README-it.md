@@ -41,18 +41,25 @@ punto d'ingresso:
 tutte. Deselezionarne una è un atto deliberato, preso con il suo costo già a schermo:
 
 ```
-  #  entry        cost/session           status
-  1 [x] superpowers  ~800                   ready
-  2 [x] caveman      ~2,480 +60/prompt      ready
-  3 [x] graphify     ~340 +48-105/toolcall  ready
-  4 [x] headroom     none                   ready
+    #  entry        cost/session           status
+ ▸  1 [x] superpowers  ~800                   ready
+    2 [x] caveman      ~2,480 +60/prompt      ready
+    3 [x] graphify     ~340 +48-105/toolcall  ready
+    4 [x] headroom     none                   ready
 
-toggle 1-4 · a=all · n=none · d <n>=why · Enter=install 4 · q=quit
->
+↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=install 4 · q=quit
 ```
 
-Una voce bloccata resta numerata ma non può essere selezionata; `d <n>` stampa cosa
-manca, perché la voce ne ha bisogno, come risolverlo e quanto costa saltarla.
+`▸` indica la riga corrente: le frecce la spostano, Space la toggla, `d` la spiega, e
+le cifre togglano ancora per numero. Il menu si ridisegna sul posto — niente copie che
+scorrono — e colora la colonna status (verde ready, giallo auto-install, rosso
+bloccata). I colori rispettano `NO_COLOR`; su una pipe, con `TERM=dumb` o con
+`LOADOUT_PLAIN_MENU=1` lo stesso menu ripiega sul prompt numerato a righe, dove una
+risposta può togglare più righe (`1 3`).
+
+Una voce bloccata resta numerata ma non può essere selezionata; `d` sulla sua riga
+stampa cosa manca, perché la voce ne ha bisogno, come risolverlo e quanto costa
+saltarla.
 
 Una dipendenza l'installer sa procurarsela da solo: **uv**. Una voce a cui manca solo
 uv/pipx non è bloccata — la sua riga resta selezionabile e riporta `needs uv/pipx

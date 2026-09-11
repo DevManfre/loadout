@@ -426,6 +426,39 @@ it "the prompt counts every visible row"
   out=$(printf '\n' | menu_select 2>&1 >/dev/null)
   assert_contains "toggle 1-2" "$out" )
 
+it "the plain menu toggles several rows in one reply"
+( stub_dir; stub claude; stub git; stub uv; absent graphify,headroom
+  assert_eq "superpowers headroom" \
+    "$(printf '2 3\n\n' | menu_select $(resolve_selection) | tr '\n' ' ' | sed 's/ $//')" )
+
+# A pipe reaches _menu_plain above; a pty reaches _menu_interactive below.
+# Stderr is a pipe even under the pty, so the interactive menu draws in append
+# mode with colors off — the assertions match plain text either way.
+it "arrows and space drive the interactive menu"
+( stub_dir; stub claude; stub git; stub uv; absent graphify,headroom
+  out=$(HOME=$(mktemp -d) run_with_pty $'\e[B \n' scripts/loadout install --dry-run)
+  assert_contains "toggled caveman off" "$out"
+  assert_contains "plugin install superpowers@claude-plugins-official" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'plugin install caveman@')" )
+
+it "digits still toggle in the interactive menu"
+( stub_dir; stub claude; stub git; stub uv; absent graphify,headroom
+  out=$(HOME=$(mktemp -d) run_with_pty $'2\n' scripts/loadout install --dry-run)
+  assert_contains "toggled caveman off" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'plugin install caveman@')" )
+
+it "d explains the current row in the interactive menu"
+( stub_dir; stub claude; stub git; stub uv; absent graphify,headroom
+  out=$(HOME=$(mktemp -d) run_with_pty $'dq' scripts/loadout install)
+  assert_contains "nothing is blocking it" "$out"
+  assert_contains "cancelled" "$out" )
+
+it "LOADOUT_PLAIN_MENU forces the line-based menu on a TTY"
+( stub_dir; stub claude; stub git; stub uv; absent graphify,headroom
+  out=$(HOME=$(mktemp -d) LOADOUT_PLAIN_MENU=1 run_with_pty $'q\n' scripts/loadout install)
+  assert_contains "toggle 1-" "$out"
+  assert_contains "cancelled" "$out" )
+
 # --- install ---------------------------------------------------------------
 it "install runs the plugin CLI for a plugin entry"
 ( stub_dir; stub claude; stub git

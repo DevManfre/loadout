@@ -15,8 +15,8 @@ PROBLEMS=0
 SELECTION_CONFIRMED=0
 
 _ok()   { INSTALLED=$((INSTALLED + 1)); }
-_skip() { note "skip: $*"; SKIPPED=$((SKIPPED + 1)); }
-_fail() { printf '   FAIL: %s\n' "$*" >&2; PROBLEMS=$((PROBLEMS + 1)); }
+_skip() { printf '   %sskip: %s%s\n' "$C_DIM" "$*" "$C_RESET"; SKIPPED=$((SKIPPED + 1)); }
+_fail() { printf '   %sFAIL: %s%s\n' "$C_RED" "$*" "$C_RESET" >&2; PROBLEMS=$((PROBLEMS + 1)); }
 
 # A marketplace is an index, not an install: it costs no context, so it is
 # added without asking.

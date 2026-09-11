@@ -39,17 +39,23 @@ the block above never has to change. Every command lives under that one entrypoi
 all of it. Deselecting one is a deliberate act, taken with its cost already on screen:
 
 ```
-  #  entry        cost/session           status
-  1 [x] superpowers  ~800                   ready
-  2 [x] caveman      ~2,480 +60/prompt      ready
-  3 [x] graphify     ~340 +48-105/toolcall  ready
-  4 [x] headroom     none                   ready
+    #  entry        cost/session           status
+ ▸  1 [x] superpowers  ~800                   ready
+    2 [x] caveman      ~2,480 +60/prompt      ready
+    3 [x] graphify     ~340 +48-105/toolcall  ready
+    4 [x] headroom     none                   ready
 
-toggle 1-4 · a=all · n=none · d <n>=why · Enter=install 4 · q=quit
->
+↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=install 4 · q=quit
 ```
 
-A blocked entry stays numbered but cannot be toggled; `d <n>` prints what it is
+`▸` marks the current row: arrows move it, Space toggles it, `d` explains it, and the
+digits still toggle by number. The menu redraws in place — no scrolling copies of
+itself — and colors the status column (green ready, yellow auto-install, red blocked).
+Colors respect `NO_COLOR`; on a pipe, with `TERM=dumb` or with `LOADOUT_PLAIN_MENU=1`
+the same menu falls back to a line-based numbered prompt where one reply may toggle
+several rows (`1 3`).
+
+A blocked entry stays numbered but cannot be toggled; `d` on its row prints what it is
 missing, why the entry needs it, how to fix it, and what skipping it costs.
 
 One dependency the installer can provide for itself: **uv**. An entry missing only
