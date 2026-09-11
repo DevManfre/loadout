@@ -230,13 +230,22 @@ _menu_plain() {
 
 # One line of the interactive menu. In-place mode clears the old content of
 # the line first; append mode (stderr not a terminal) just prints.
+# One line of the interactive frame. Counts itself in the caller's
+# frame_lines, which is what lets the next redraw know how far up to go —
+# frames change height when the feedback area holds a full explanation.
 _menu_ln() {
-  if [ "${inplace:-0}" -eq 1 ]; then printf '\e[2K%s\n' "$*" >&2
-  else printf '%s\n' "$*" >&2
-  fi
+  frame_lines=$((${frame_lines:-0} + 1))
+  printf '%s\n' "$*" >&2
 }
 
-_menu_cursor_restore() { [ "${inplace:-0}" -eq 1 ] && printf '\e[?25h' >&2; }
+# Undo everything _menu_interactive did to the terminal: show the cursor
+# again and give the tty its echo back. Runs on every exit path, Ctrl-C
+# included.
+_menu_restore() {
+  [ "${inplace:-0}" -eq 1 ] && printf '\e[?25h' >&2
+  [ -n "${stty_saved:-}" ] && stty "$stty_saved" 2>/dev/null
+  return 0
+}
 
 # The arrow-key menu: ▸ marks the current row, ↑/↓ move it, Space toggles it,
 # d explains it, digits toggle by number, Enter installs, q quits. Reached
@@ -245,7 +254,7 @@ _menu_cursor_restore() { [ "${inplace:-0}" -eq 1 ] && printf '\e[?25h' >&2; }
 _menu_interactive() {
   local -a all=("$@") chosen=() rows=()
   local i name cur=0 key seq idx token feedback="" drawn=0 inplace=0
-  local status line mark cursor
+  local status line mark cursor frame_lines=0 last_frame=0 fline stty_saved=""
   for name in "${all[@]}"; do [ -n "$name" ] && chosen+=("$name"); done
 
   local -a blocked=()
@@ -261,13 +270,21 @@ _menu_interactive() {
   # the same menu draws by appending, with no escape codes to choke on.
   [ -t 2 ] && [ "${TERM:-}" != dumb ] && inplace=1
   [ "$inplace" -eq 1 ] && printf '\e[?25l' >&2
-  trap '_menu_cursor_restore; trap - INT; kill -INT $$' INT
+  # read -s silences the terminal only while a read is pending; a key typed
+  # during the redraw in between would be echoed by the tty driver and flash
+  # its escape code on screen. Echo goes off for the menu's whole lifetime.
+  if stty_saved=$(stty -g 2>/dev/null); then stty -echo 2>/dev/null; else stty_saved=""; fi
+  trap '_menu_restore; trap - INT; kill -INT $$' INT
 
   while :; do
+    # Frames change height (the feedback area may hold a full explanation),
+    # so the redraw goes up by the previous frame's measured height and
+    # clears from there to the end of the screen before printing.
     if [ "$drawn" -eq 1 ] && [ "$inplace" -eq 1 ]; then
-      printf '\e[%dA' "$(( ${#rows[@]} + 5 ))" >&2
+      printf '\e[%dA\e[0J' "$last_frame" >&2
     fi
     drawn=1
+    frame_lines=0
 
     _menu_ln ""
     _menu_ln "    #  entry        cost/session           status"
@@ -294,7 +311,17 @@ _menu_interactive() {
     done
     _menu_ln ""
     _menu_ln "${C_BOLD}↑/↓${C_RESET} move · ${C_BOLD}Space${C_RESET} toggle · d=why · a=all · n=none · ${C_BOLD}Enter${C_RESET}=install $(_menu_count) · q=quit"
-    _menu_ln "   ${C_DIM}${feedback}${C_RESET}"
+    # The feedback area holds one line ("toggled graphify off") or a whole
+    # explanation from d — the frame grows to fit and the next redraw's
+    # height comes from frame_lines, so nothing scrolls either way.
+    if [ -n "$feedback" ]; then
+      while IFS= read -r fline; do
+        _menu_ln "   ${C_DIM}${fline}${C_RESET}"
+      done <<< "$feedback"
+    else
+      _menu_ln ""
+    fi
+    last_frame=$frame_lines
 
     IFS= read -rsn1 key || key=q
     feedback=""
@@ -307,7 +334,7 @@ _menu_interactive() {
         esac ;;
       ''|$'\r'|$'\n') break ;;
       q|Q)
-        _menu_cursor_restore; trap - INT
+        _menu_restore; trap - INT
         return 1 ;;
       a|A)
         chosen=()
@@ -318,16 +345,15 @@ _menu_interactive() {
       d|D)
         name=${rows[$cur]:-}
         [ -n "$name" ] || continue
-        # The explanation is multi-line, so it stays put as a log above the
-        # menu: print it, then draw the next frame fresh below it.
-        printf '\n' >&2
+        # The explanation renders inside the frame's feedback area, so it
+        # replaces the previous frame like any other keystroke instead of
+        # pushing a second copy of the menu down the screen.
         token=$(entry_deps "$name" block | head -1)
         if [ -n "$token" ]; then
-          explain_dep "$token" "$name" >&2
+          feedback=$(explain_dep "$token" "$name")
         else
-          printf '   %s is ready — nothing is blocking it\n' "$name" >&2
-        fi
-        drawn=0 ;;
+          feedback="$name is ready — nothing is blocking it"
+        fi ;;
       [0-9])
         if [ "$key" -ge 1 ] && [ "$key" -le "${#rows[@]}" ]; then
           _menu_toggle "$((key - 1))"
@@ -338,7 +364,7 @@ _menu_interactive() {
     esac
   done
 
-  _menu_cursor_restore; trap - INT
+  _menu_restore; trap - INT
   # Print in manifest order, not toggle order, so the install sequence is stable.
   for name in "${all[@]}"; do
     printf '%s\n' "${chosen[@]:-}" | grep -qx "$name" && printf '%s\n' "$name"
