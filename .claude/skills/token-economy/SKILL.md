@@ -1,15 +1,19 @@
 ---
 name: token-economy
-description: Use when asked to audit or cut the token cost of a Claude Code setup, or on /token-economy.
+description: Use when asked to audit or cut the token cost of a Claude Code setup, when writing a new skill, agent or CLAUDE.md, or on /token-economy.
 ---
 
 # token-economy
 
-Audit every Claude Code component (project + global) for token economy: measure
-real costs, find waste, propose fixes with projected savings. **Never apply a
-fix without the user picking it from the report.**
+Two modes, same rules:
 
-## Workflow
+- **Audit** — measure real costs of every Claude Code component (project +
+  global), find waste, propose fixes with projected savings. **Never apply a
+  fix without the user picking it from the report.**
+- **Author** — when writing a new component, apply the dimensions as design
+  rules up front (see Authoring rules) instead of fixing waste later.
+
+## Audit workflow
 
 1. Gather data (both scripts, no judgment involved):
    ```bash
@@ -17,10 +21,10 @@ fix without the user picking it from the report.**
    scripts/usage.sh 30                 # real invocation counts, last 30 days
    scripts/usage.sh 30 <project_dir>   # same, this project only
    ```
-2. Judge each component against the six dimensions below.
+2. Judge each component against the nine dimensions below.
 3. Emit the report (format below). Stop. Apply only the findings the user picks.
 
-## Six dimensions
+## Nine dimensions
 
 | # | Check | Flag when | Proposed action |
 |---|-------|-----------|-----------------|
@@ -33,6 +37,26 @@ fix without the user picking it from the report.**
 | 7 | Facts vs rules | CLAUDE.md carries facts (versions, module lists, endpoints, layout) | Facts → regenerable `.claude/overview.md` (own update skill) or README; CLAUDE.md keeps a "where is what" table + rules only |
 | 8 | Rule → hook | CLAUDE.md rule is mechanically checkable (path guards, commit format, branch policy, test gate) | Enforce via hook in `.claude/settings.json`; CLAUDE.md keeps only "rules no hook can block" |
 | 9 | Skill body bloat | SKILL.md body > ~1500 tok, or carries heavy reference (API tables, long examples, multi-language duplicates) inline | Move reference to `references/*.md` read on demand; one example, not many; body keeps workflow + judgment rules only |
+
+## Authoring rules
+
+The dimensions above, inverted — apply while writing, don't wait for the audit:
+
+- **Pick the cheapest form first:** deterministic steps → script or hook, not a
+  skill (dim 6, 8). Facts → regenerable file or README, not CLAUDE.md (dim 7).
+  Rules scoped to one directory → `<dir>/CLAUDE.md` (dim 2). A skill only when
+  the work needs judgment.
+- **Description = trigger conditions only,** ~30-45 tokens: "Use when..." plus
+  the keywords, error strings or commands that must fire it. No workflow
+  summary — it costs always-on tokens and agents follow it instead of the body.
+- **Body = workflow + judgment rules only.** Heavy reference (API tables, long
+  examples, language mirrors) → `references/*.md` read on demand. One example,
+  not many (dim 9).
+- **Pin the model** on mechanical subagents: `model: haiku` for locate, rename,
+  format, extract. Default model only when output needs reasoning (dim 5).
+- **Pre-ship checklist:** run `scripts/measure.sh` on the new component; check
+  the description contains every situation it must fire in and nothing else;
+  confirm nothing in the body is derivable from code or git.
 
 ## Judgment rules
 
