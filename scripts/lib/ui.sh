@@ -230,12 +230,19 @@ _menu_plain() {
 
 # One line of the interactive menu. In-place mode clears the old content of
 # the line first; append mode (stderr not a terminal) just prints.
-# One line of the interactive frame. Counts itself in the caller's
-# frame_lines, which is what lets the next redraw know how far up to go —
-# frames change height when the feedback area holds a full explanation.
+# One line of the interactive frame, appended to the caller's frame_buf and
+# counted in its frame_lines (how far up the next redraw must go — frames
+# change height when the feedback area holds a full explanation). Buffering
+# the frame and writing it in one printf is what keeps the repaint free of
+# flicker: each line overwrites the old one (\e[2K) instead of the whole
+# area being cleared first and repainted line by line.
 _menu_ln() {
   frame_lines=$((${frame_lines:-0} + 1))
-  printf '%s\n' "$*" >&2
+  if [ "${inplace:-0}" -eq 1 ]; then
+    frame_buf+=$'\e[2K'"$*"$'\n'
+  else
+    frame_buf+="$*"$'\n'
+  fi
 }
 
 # Undo everything _menu_interactive did to the terminal: show the cursor
@@ -255,6 +262,7 @@ _menu_interactive() {
   local -a all=("$@") chosen=() rows=()
   local i name cur=0 key seq idx token feedback="" drawn=0 inplace=0
   local status line mark cursor frame_lines=0 last_frame=0 fline stty_saved=""
+  local frame_buf=""
   for name in "${all[@]}"; do [ -n "$name" ] && chosen+=("$name"); done
 
   local -a blocked=()
@@ -277,14 +285,8 @@ _menu_interactive() {
   trap '_menu_restore; trap - INT; kill -INT $$' INT
 
   while :; do
-    # Frames change height (the feedback area may hold a full explanation),
-    # so the redraw goes up by the previous frame's measured height and
-    # clears from there to the end of the screen before printing.
-    if [ "$drawn" -eq 1 ] && [ "$inplace" -eq 1 ]; then
-      printf '\e[%dA\e[0J' "$last_frame" >&2
-    fi
-    drawn=1
     frame_lines=0
+    frame_buf=""
 
     _menu_ln ""
     _menu_ln "    #  entry        cost/session           status"
@@ -321,6 +323,22 @@ _menu_interactive() {
     else
       _menu_ln ""
     fi
+
+    # One write per frame. The cursor first moves up over the previous frame
+    # (measured height — frames grow and shrink with the feedback area), the
+    # buffered lines overwrite it, and the trailing clear-to-end drops
+    # whatever a taller previous frame left below. Never clear first and
+    # repaint after: the blank gap in between is visible as flicker.
+    if [ "$inplace" -eq 1 ]; then
+      if [ "$drawn" -eq 1 ]; then
+        printf '\e[%dA%s\e[0J' "$last_frame" "$frame_buf" >&2
+      else
+        printf '%s' "$frame_buf" >&2
+      fi
+    else
+      printf '%s' "$frame_buf" >&2
+    fi
+    drawn=1
     last_frame=$frame_lines
 
     IFS= read -rsn1 key || key=q
