@@ -44,6 +44,41 @@ _python_installer() {
   fi
 }
 
+# The auto-fixable dependencies a selection is missing, each once.
+selection_fixables() {
+  local name
+  for name in "$@"; do
+    [ -n "$name" ] || continue
+    entry_soft_blocks "$name"
+  done | sort -u
+}
+
+# Install one dependency the installer knows how to provide (dep_autofix_cmd).
+# Consent is per mutation: the menu priced the entries' context cost, not a
+# change to the machine, so SELECTION_CONFIRMED deliberately does not cover
+# this prompt and only --yes waives it. A decline or a failure is not fatal —
+# the entries needing the token simply stay on their normal blocked path.
+fix_dep() {
+  local token=$1 cmd
+  cmd=$(dep_autofix_cmd "$token") || return 1
+  dep_present "$token" && return 0
+  say "dependency: $token"
+  note "why:  $(dep_field "$token" 5)"
+  note "runs: $cmd"
+  confirm "install it now?" || { _skip "declined; entries needing $token stay blocked"; return 1; }
+  run sh -c "$cmd" || { _fail "auto-install of $token failed"; return 1; }
+  if [ "${OPT_DRY_RUN:-0}" -eq 1 ]; then
+    note "(dry run: nothing was installed, so dependent entries below still print as blocked)"
+    return 0
+  fi
+  # The Astral script lands in ~/.local/bin, which this process may not have
+  # on PATH yet; dependent installs need it now — the user's next shell picks
+  # it up from their rc file instead.
+  PATH="$HOME/.local/bin:$PATH"; export PATH
+  dep_present "$token" || { _fail "$token is still missing after the install"; return 1; }
+  note "installed; open a new shell to have it on PATH outside this run"
+}
+
 install_entry() {
   local name=$1 kind source token
   kind=$(manifest_field "$name" 2)

@@ -137,7 +137,7 @@ cmd_status() {
 
 cmd_install() {
   local -a selection
-  local name
+  local name token
 
   # A hard stop, not a per-entry skip: without a TTY to ask on and without
   # --yes to accept the printed costs up front, there is no way to confirm a
@@ -180,6 +180,13 @@ cmd_install() {
       done
     done
   fi
+
+  # Dependencies the installer can provide itself come first, each behind its
+  # own prompt; a declined or failed fix leaves its entries on the normal
+  # blocked path inside install_entry, which re-probes for itself.
+  for token in $(selection_fixables "${selection[@]:-}"); do
+    fix_dep "$token" || :
+  done
 
   if [ "${#selection[@]}" -gt 0 ] && [ -n "${selection[0]:-}" ]; then
     say "$(selection_total "${selection[@]}")"

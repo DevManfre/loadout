@@ -54,6 +54,15 @@ toggle 1-4 · a=all · n=none · d <n>=why · Enter=install 4 · q=quit
 Una voce bloccata resta numerata ma non può essere selezionata; `d <n>` stampa cosa
 manca, perché la voce ne ha bisogno, come risolverlo e quanto costa saltarla.
 
+Una dipendenza l'installer sa procurarsela da solo: **uv**. Una voce a cui manca solo
+uv/pipx non è bloccata — la sua riga resta selezionabile e riporta `needs uv/pipx
+(auto-install, asks first)`. Prima di installare una voce del genere, l'installer
+stampa il comando esatto che sta per eseguire (lo script ufficiale di Astral,
+`curl -LsSf https://astral.sh/uv/install.sh | sh`) e chiede conferma; Enter sul menu
+non salta quel prompt, solo `--yes` lo fa. Rifiutare lascia la voce sul suo normale
+percorso bloccato, e `--dry-run` stampa il comando senza eseguirlo. Tutto il resto —
+git, Claude Code, Docker — resta da installare a mano.
+
 | Opzione | Cosa fa |
 |---|---|
 | `--preset core\|full` | Limita il menu a un preset con nome (default: `full`) |

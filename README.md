@@ -52,6 +52,15 @@ toggle 1-4 · a=all · n=none · d <n>=why · Enter=install 4 · q=quit
 A blocked entry stays numbered but cannot be toggled; `d <n>` prints what it is
 missing, why the entry needs it, how to fix it, and what skipping it costs.
 
+One dependency the installer can provide for itself: **uv**. An entry missing only
+uv/pipx is not blocked — its row stays selectable and reads `needs uv/pipx
+(auto-install, asks first)`. Before installing such an entry, the installer prints the
+exact command it is about to run (the official Astral script,
+`curl -LsSf https://astral.sh/uv/install.sh | sh`) and asks; Enter on the menu does not
+waive that prompt, only `--yes` does. Declining leaves the entry on its normal blocked
+path, and `--dry-run` prints the command without running it. Everything else — git,
+Claude Code, Docker — stays yours to install.
+
 | Flag | What it does |
 |---|---|
 | `--preset core\|full` | Restrict the menu to a named preset (default: `full`) |

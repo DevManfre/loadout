@@ -20,9 +20,12 @@ run() {
 # No entry in this catalog depends on another entry, so walking away from one
 # never breaks a second — that is why the 'or:' line can promise it.
 explain_dep() {
-  local token=$1 entry=$2
+  local token=$1 entry=$2 auto
   printf '    why:  %s\n' "$(dep_field "$token" 5)"
   printf '    fix:  %s\n' "$(dep_field "$token" 6)"
+  if auto=$(dep_autofix_cmd "$token"); then
+    printf '    auto: the installer can run this for you, asking first: %s\n' "$auto"
+  fi
   printf '    or:   skip %s — no other entry in the loadout depends on it\n' "$entry"
   printf '    docs: %s\n' "$(dep_field "$token" 7)"
 }
@@ -53,7 +56,10 @@ resolve_selection() {
     [ -z "${OPT_ONLY:-}" ] || { _in_list "$name" "$OPT_ONLY" || continue; }
     [ -z "${OPT_EXCEPT:-}" ] || { _in_list "$name" "$OPT_EXCEPT" && continue; }
     [ -n "${OPT_ONLY:-}" ] || manifest_in_preset "$name" "${OPT_PRESET:-full}" || continue
-    [ -z "$(entry_deps "$name" block)" ] || continue
+    # A block the installer can fix itself (dep_autofix_cmd) does not exclude
+    # the entry: cmd_install offers the fix, behind its own prompt, before
+    # installing. Only unfixable blocks take an entry out of the selection.
+    [ -z "$(entry_hard_blocks "$name")" ] || continue
     entry_installed "$name" && continue
     printf '%s\n' "$name"
   done
@@ -82,14 +88,15 @@ _menu_row() {
 # cursor movement: this has to work over ssh, in WSL and under a pipe.
 menu_select() {
   local -a all=("$@") chosen=() rows=()
-  local i name reply idx token
+  local i name reply idx token soft status
   for name in "${all[@]}"; do chosen+=("$name"); done
 
   # Blocked entries are shown but cannot be chosen; that is the whole point of
-  # showing them.
+  # showing them. Only unfixable blocks land here — an entry whose blocks the
+  # installer can fix itself is selectable and says so on its row.
   local -a blocked=()
   for name in $(manifest_names); do
-    [ -z "$(entry_deps "$name" block)" ] || blocked+=("$name")
+    [ -z "$(entry_hard_blocks "$name")" ] || blocked+=("$name")
   done
 
   while :; do
@@ -104,10 +111,12 @@ menu_select() {
     i=0
     for name in "${all[@]}"; do
       i=$((i + 1))
+      soft=$(entry_soft_blocks "$name" | tr '\n' ' ' | sed 's/ *$//')
+      if [ -n "$soft" ]; then status="needs $soft (auto-install, asks first)"; else status=ready; fi
       if printf '%s\n' "${chosen[@]}" | grep -qx "$name"; then
-        printf '  %d [x] %-12s %-22s ready\n' "$i" "$name" "$(manifest_field "$name" 7)" >&2
+        printf '  %d [x] %-12s %-22s %s\n' "$i" "$name" "$(manifest_field "$name" 7)" "$status" >&2
       else
-        printf '  %d [ ] %-12s %-22s ready\n' "$i" "$name" "$(manifest_field "$name" 7)" >&2
+        printf '  %d [ ] %-12s %-22s %s\n' "$i" "$name" "$(manifest_field "$name" 7)" "$status" >&2
       fi
     done
     # Blocked rows are numbered too, continuing after the selectable ones: the

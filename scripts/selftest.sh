@@ -249,6 +249,11 @@ assert_contains "why:" "$out"
 assert_contains "fix:" "$out"
 assert_contains "docs: README.md" "$out"
 
+it "doctor names the fix the installer can run itself"
+out=$( stub_dir; absent uv,pipx; stub claude; stub git
+       LOADOUT_FAKE_PLATFORM=Linux/x86_64 scripts/loadout doctor 2>&1 )
+assert_contains "auto: the installer can run this for you" "$out"
+
 it "doctor exits 1 when something is blocked"
 ( stub_dir; absent uv,pipx; stub claude; stub git
   assert_status 1 env LOADOUT_FAKE_PLATFORM=Linux/x86_64 scripts/loadout doctor )
@@ -355,10 +360,15 @@ it "--only is the same set a menu toggled to those entries would give"
   OPT_PRESET=full OPT_EXCEPT="" OPT_ONLY="graphify,headroom"
   assert_eq "graphify headroom" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
 
-it "a blocked entry is never selected"
-( stub_dir; absent uv,pipx; stub claude; stub git
+it "a hard-blocked entry is never selected"
+( stub_dir; absent git,graphify,headroom; stub claude; stub uv
   OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
-  assert_eq "superpowers caveman" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
+  assert_eq "graphify headroom" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
+
+it "an auto-fixable block does not exclude an entry"
+( stub_dir; absent uv,pipx,graphify,headroom; stub claude; stub git
+  OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
+  assert_eq "superpowers caveman graphify headroom" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
 
 it "an already-installed entry is not selected again"
 ( stub_dir; stub claude; stub git; stub uv; stub graphify
@@ -387,7 +397,13 @@ it "the menu prints in manifest order, not toggle order"
 it "d explains a blocked row instead of aborting"
 ( stub_dir; absent uv,pipx; stub claude; stub git
   out=$(printf 'd 3\n\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
-  assert_contains "why:" "$out" )
+  assert_contains "why:" "$out"
+  assert_contains "auto: the installer can run this for you" "$out" )
+
+it "an auto-fixable row says so instead of ready"
+( stub_dir; absent uv,pipx,graphify,headroom; stub claude; stub git
+  out=$(printf 'q\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "needs uv/pipx (auto-install, asks first)" "$out" )
 
 it "d with a bad argument does not abort the menu"
 ( stub_dir; absent graphify,headroom; stub claude
@@ -395,18 +411,18 @@ it "d with a bad argument does not abort the menu"
   assert_eq "" "$(printf '%s' "$out" | grep 'unbound variable')" )
 
 it "a blocked row cannot be toggled on"
-( stub_dir; absent uv,pipx; stub claude; stub git
+( stub_dir; absent git,graphify,headroom; stub claude; stub uv
   out=$(printf '3\n\n' | menu_select $(resolve_selection) 2>/dev/null)
-  assert_eq "" "$(printf '%s' "$out" | grep -x graphify)" )
+  assert_eq "" "$(printf '%s' "$out" | grep -x superpowers)" )
 
 it "row numbers stay correct when nothing is selectable"
-( stub_dir; absent uv,pipx; stub claude; stub git
+( stub_dir; absent claude,git; stub uv
   out=$(printf 'd 2\n\n' | menu_select 2>&1 >/dev/null)
-  assert_contains "headroom" "$out"
-  assert_eq "" "$(printf '%s' "$out" | grep 'skip graphify')" )
+  assert_contains "caveman" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'skip superpowers')" )
 
 it "the prompt counts every visible row"
-( stub_dir; absent uv,pipx; stub claude; stub git
+( stub_dir; absent claude,git; stub uv
   out=$(printf '\n' | menu_select 2>&1 >/dev/null)
   assert_contains "toggle 1-2" "$out" )
 
@@ -467,16 +483,49 @@ it "dry run mutates nothing at all"
   HOME=$(mktemp -d) scripts/loadout install --yes --dry-run >/dev/null 2>&1
   assert_eq "" "$(grep -E '(plugin install|tool install|marketplace add)' "$STUB_CALLS")" )
 
-# graphify must also be faked absent here: otherwise entry_installed reports
+# headroom must also be faked absent here: otherwise entry_installed reports
 # it as already installed on this machine and the blocked-entry diagnostic in
 # cmd_install is skipped (it only fires for a named entry that is neither
 # selected nor already installed), so the explanation this test looks for
-# would never be printed.
-it "a blocked entry named with --only refuses and explains"
-out=$( stub_dir; absent uv,pipx,graphify; stub claude; stub git
-       HOME=$(mktemp -d) scripts/loadout install --only graphify --yes 2>&1 )
+# would never be printed. The block has to be a hard one (docker on Intel
+# macOS): a uv/pipx block no longer excludes an entry — the installer offers
+# to fix that one itself.
+it "a hard-blocked entry named with --only refuses and explains"
+out=$( stub_dir; absent docker,headroom; stub claude; stub git; stub uv
+       LOADOUT_FAKE_PLATFORM=Darwin/x86_64 \
+       HOME=$(mktemp -d) scripts/loadout install --only headroom --yes 2>&1 )
 assert_contains "cannot install here" "$out"
-assert_contains "docs.astral.sh" "$out"
+assert_contains "docs.docker.com" "$out"
+
+# Every test that can reach fix_dep stubs sh: the fix runs through `run sh -c`,
+# so the stub intercepts it and no selftest ever touches the network. The
+# absent seam still reports uv as missing after the stubbed "install", which is
+# exactly the re-probe failure path the last assertion pins down.
+it "--yes runs the uv auto-install through sh and re-probes"
+( stub_dir; absent uv,pipx,graphify; stub claude; stub git; stub sh
+  out=$(HOME=$(mktemp -d) scripts/loadout install --only graphify --yes 2>&1)
+  assert_contains "sh -c curl -LsSf https://astral.sh/uv/install.sh | sh" "$(stub_calls)"
+  assert_contains "still missing after the install" "$out" )
+
+it "declining the fix runs nothing and leaves the entry blocked"
+( stub_dir; absent uv,pipx,graphify; stub claude; stub git; stub sh
+  out=$(HOME=$(mktemp -d) run_with_pty $'n\n' scripts/loadout install --only graphify)
+  assert_eq "" "$(grep 'sh -c curl' "$STUB_CALLS")"
+  assert_contains "cannot install here" "$out" )
+
+it "a dry run prints the fix without running it"
+( stub_dir; absent uv,pipx,graphify; stub claude; stub git; stub sh
+  out=$(HOME=$(mktemp -d) scripts/loadout install --only graphify --yes --dry-run 2>&1)
+  assert_contains "run: sh -c curl" "$out"
+  assert_eq "" "$(grep 'sh -c curl' "$STUB_CALLS")" )
+
+# Enter on the menu consents to the priced set of entries, not to a mutation
+# of the machine itself, so the fix keeps its own prompt even after Enter.
+it "the menu's Enter does not waive the fix prompt"
+( stub_dir; absent uv,pipx,graphify,headroom; stub claude; stub git; stub sh
+  out=$(HOME=$(mktemp -d) run_with_pty $'\ny\n' scripts/loadout install)
+  assert_contains "install it now?" "$out"
+  assert_contains "sh -c curl" "$(stub_calls)" )
 
 it "no TTY and no --yes is a hard stop"
 ( stub_dir; stub claude; stub git

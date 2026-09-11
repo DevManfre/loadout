@@ -43,6 +43,34 @@ dep_present() {
   esac
 }
 
+# The dependencies the installer can install for itself, and the exact
+# command it would run. The arm is the authority: a token is auto-fixable
+# exactly when it has one. Kept as code rather than as a loadout.deps column
+# because that file is '|'-delimited and this command contains a pipe.
+dep_autofix_cmd() {
+  case "$1" in
+    uv/pipx) printf 'curl -LsSf https://astral.sh/uv/install.sh | sh' ;;
+    *) return 1 ;;
+  esac
+}
+
+# Blocking tokens the installer cannot fix; these keep an entry out of the
+# selection entirely.
+entry_hard_blocks() {
+  local token
+  for token in $(entry_deps "$1" block); do
+    dep_autofix_cmd "$token" >/dev/null || printf '%s\n' "$token"
+  done
+}
+
+# Blocking tokens the installer can fix itself, with consent, at install time.
+entry_soft_blocks() {
+  local token
+  for token in $(entry_deps "$1" block); do
+    dep_autofix_cmd "$token" >/dev/null && printf '%s\n' "$token"
+  done
+}
+
 # Applicable, missing tokens of one severity, one per line.
 entry_deps() {
   local name=$1 severity=$2 token needs
