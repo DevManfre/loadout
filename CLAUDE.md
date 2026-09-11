@@ -1,91 +1,32 @@
 # CLAUDE.md — loadout
 
-## What this repo is
+A guide, **not a plugin**: documents which Claude Code skills, sub-agents, workflows and
+integrations are worth carrying and what each costs in context. No application code.
+Token economy is a feature: an asset that costs more context than it saves doesn't
+belong here.
 
-A guide, **not a plugin.** Loadout documents how to set up your own Claude Code well:
-which skills, sub-agents, workflows and third-party integrations are worth carrying,
-what each one costs in context, and what to skip. It runs no marketplace, publishes no
-plugin manifest and vendors nothing — every asset is installed from its own upstream
-source.
+## Where is what
 
-**No application code.** The product is the documentation plus the assets loadout
-writes itself. Token economy is a feature, not a side effect: an asset that costs more
-context than it saves does not belong here, however good its own README looks.
+| Need | Read |
+|---|---|
+| Catalog, philosophy, install flow | `README.md` (canonical, English) |
+| Layout facts (dirs, scripts, manifest) | `ls` + `README.md` — small repo, no overview file |
+| Installer internals | `scripts/lib/`, entrypoint `scripts/loadout` |
+| Validation / installer tests | `scripts/validate.sh` / `scripts/selftest.sh` (stubbed machine, no network) |
+| Codebase questions | `graphify query "<q>"` (hook enforces); after edits `graphify update .` |
 
-The install path is deliberately one block. `scripts/install-all.sh` sets up the whole
-loadout in a single run — plugin entries through the Claude Code CLI, third-party
-binaries through a package manager, loadout's own assets by plain copy — printing each
-always-on token cost and asking before paying it. A loadout is carried whole by
-default: the installer opens with every entry already selected, and Enter installs all
-of it. Deselecting is a deliberate act taken in front of the prices, not the normal
-path.
+Skills present themselves via their descriptions (catalog-entry, readme-sync,
+commit-convention, token-audit).
 
-## Layout
+## Rules no hook can block
 
-```
-skills/<name>/SKILL.md          loadout's own skills (+ references/, scripts/ as needed)
-agents/<name>.md                loadout's own sub-agent definitions
-workflows/<name>.md             loadout's own workflow scripts / recipes
-integrations/<name>/            third-party guides (plugins, binaries, MCP servers)
-scripts/loadout                 single entrypoint: install, update, status, doctor, remove, list
-scripts/install-all.sh          one-block install of the whole loadout
-scripts/lib/                    manifest, probe, ui and actions libraries
-scripts/loadout.manifest        catalog data: one row per installable entry
-scripts/loadout.deps            dependency registry: what each entry needs, why, how to fix it
-scripts/validate.sh             structural validation
-scripts/selftest.sh             test runner
-docs/                           longer-form guides
-README.md                       canonical guide + catalog (English)
-README-it.md                    Italian mirror
-.claude/skills/                 THIS repo's own tooling — never shipped
-```
-
-Hard boundary: anything under `.claude/` is workspace tooling. It never appears in the
-README catalog and is never installed by `install-all.sh`. Anything under `skills/`,
-`agents/`, `workflows/`, `integrations/` is part of the guide and must be reachable
-from the README catalog.
-
-## Invariants
-
-- No app code, no runtime beyond bash/node helper scripts under `scripts/`.
-- No plugin manifest, no marketplace index. If a plugin path is needed, point at the
-  upstream marketplace that already carries the asset — do not re-publish it.
-- Every catalog entry states its upstream, license, version inspected, measured token
-  cost, per-item verdict and gotchas. Costs are measured on a real repository, never
-  copied from an upstream README.
-- Every shipped asset is self-documenting: valid frontmatter (`name`, `description`),
-  explicit trigger conditions, no assumptions about the user's machine.
-- Adding, renaming, or removing a catalog entry is one commit covering the entry,
-  `scripts/install-all.sh`, and the README catalog (all languages).
-- `skills/` names are the public API. Renaming one breaks installs — treat it as a
-  breaking change (`💥`) and say so in the commit body.
-
-## Docs
-
-`README.md` is canonical and written in English. `README-it.md` must mirror it
-section for section. Never hand-edit one language alone — use the **readme-sync**
-skill, which propagates in cascade to every `README-<lang>.md`.
-
-## Commits
-
-English only. Format `<gitmoji> <SCOPE> - <subject>`. Use the **commit-convention**
-skill; it holds the gitmoji meanings and the scope rules.
-
-## Build / test
-
-None — no package manifest. Validation is structural, via `scripts/validate.sh`:
-frontmatter parses, every path the README names resolves, every integration documents
-itself and is reachable from the catalog, and the language mirrors stay in parity.
-`scripts/selftest.sh` is the runner for the installer itself: it stubs every
-executable an entry could probe for and runs `scripts/loadout` for real against that
-fake machine, with no network access and no actual install.
-
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+1. **Hard boundary:** `.claude/` = workspace tooling, never shipped, never in the
+   catalog. `skills/`, `agents/`, `workflows/`, `integrations/` = shipped, must be
+   reachable from the README catalog.
+2. No plugin manifest or marketplace index — point at upstream, never re-publish.
+3. Every catalog entry states upstream, license, version inspected, token cost
+   **measured on a real repository**, per-item verdict, gotchas.
+4. Catalog add/rename/remove = one commit covering entry, `install-all.sh`, and the
+   README catalog in **all** languages (readme-sync cascades; never hand-edit one).
+5. `skills/` names are public API — renaming is a breaking change (`💥` in commit body).
+6. Commits English, `<gitmoji> <SCOPE> - <subject>` (commit-convention).

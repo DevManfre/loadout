@@ -1,6 +1,6 @@
 ---
 name: catalog-entry
-description: Use when asked to add, replace, re-measure or remove anything loadout carries — a third-party integration, one of loadout's own skills, sub-agents or workflows. Runs the full admission procedure: classify, pin, measure on this machine, judge per item, wire into the install script and the README catalog in every language, verify, commit as one change.
+description: Use when asked to add, replace, re-measure or remove anything loadout carries — a third-party integration, one of loadout's own skills, sub-agents or workflows.
 ---
 
 # Catalog entry
