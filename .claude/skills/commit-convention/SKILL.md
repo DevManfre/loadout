@@ -1,6 +1,6 @@
 ---
 name: commit-convention
-description: Use when writing any commit message in this repo, staging changes, or being asked to commit. Enforces the house format `<gitmoji> <SCOPE> - <subject>` in English, with gitmoji chosen by its official meaning and a free-form uppercase scope.
+description: Use when committing or staging changes in this repo. Format `<gitmoji> <SCOPE> - <subject>`.
 ---
 
 # Commit convention

@@ -1,6 +1,6 @@
 ---
 name: token-audit
-description: Use when asked to audit, reduce, or optimize the token cost of a Claude Code setup — CLAUDE.md too long, unused skills or plugins, verbose skill descriptions, subagent model choice, converting skills to scripts, or /token-audit.
+description: Use when asked to audit or cut the token cost of a Claude Code setup, or on /token-audit.
 ---
 
 # token-audit
@@ -27,7 +27,7 @@ fix without the user picking it from the report.**
 | 1 | CLAUDE.md as index | Root CLAUDE.md carries procedure prose, rule lists, or content derivable from code/git | Move procedure → skill; derivable content → delete; keep pointers |
 | 2 | Per-folder CLAUDE.md | Root CLAUDE.md carries rules that only apply inside one directory | Split into `<dir>/CLAUDE.md` (loaded lazily on entry) |
 | 3 | Unused skills/agents/plugins | 0 invocations in usage window AND not new (<2 weeks) | Archive skill or agent / disable plugin |
-| 4 | Verbose descriptions | Skill/agent description > ~60 tokens | Shorten to trigger conditions only |
+| 4 | Verbose descriptions | Skill/agent description > ~40 tokens | Shorten to trigger conditions only |
 | 5 | Model fit | Subagent or routine with no model pin, doing mechanical work (locate, rename, format, extract) | Pin `model: haiku`; keep default only when task needs reasoning |
 | 6 | Skill → code | SKILL.md body is deterministic steps with no judgment calls | Convert to script or hook; skill shrinks to a pointer or dies |
 | 7 | Facts vs rules | CLAUDE.md carries facts (versions, module lists, endpoints, layout) | Facts → regenerable `.claude/overview.md` (own update skill) or README; CLAUDE.md keeps a "where is what" table + rules only |
@@ -37,9 +37,11 @@ fix without the user picking it from the report.**
 ## Judgment rules
 
 - **Description cuts:** keep every trigger keyword ("Use when...", error strings,
-  command names, symptoms). Cut only workflow summary and prose. A description
-  that summarizes the workflow is doubly wrong: costs tokens AND agents follow
-  it instead of reading the body.
+  command names, symptoms). Cut everything else: workflow summary, prose,
+  qualifiers ("in this repo", "that must appear in"), enumerated examples when
+  one generic term covers them. Target: one trigger sentence plus at most one
+  key-fact clause, ~30-45 tokens. A description that summarizes the workflow is
+  doubly wrong: costs tokens AND agents follow it instead of reading the body.
 - **Always-on beats on-trigger:** a 1000-token body used weekly is fine; a
   100-token description paid every session on an unused skill is not.
   Prioritize findings by `always_on_tokens × (is it loaded every session?)`.

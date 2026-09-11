@@ -1,6 +1,6 @@
 ---
 name: readme-sync
-description: Use when editing, extending, or restructuring any README in this repo, or when adding/renaming/removing a shipped asset that must appear in the catalog. Keeps README.md (canonical, English) and every README-<lang>.md mirror in lockstep — an edit to one language cascades to all the others in the same commit.
+description: Use when editing any README or adding/renaming/removing a catalog asset. Edits cascade to README.md (canonical) and all README-<lang>.md mirrors.
 ---
 
 # README sync
