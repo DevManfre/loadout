@@ -165,6 +165,7 @@ plugin in mezzo.
 
 | Nome | Cosa fa | Cosa ti restituisce | Costo sempre attivo | Documentazione |
 |---|---|---|---|---|
+| hook-recipes | Trasforma un'istruzione ripetuta in un hook applicato dall'harness: quali regole si prestano, i quattro dettagli di contratto per cui la maggior parte degli hook in circolazione non scatta mai, sei ricette testate e una sonda che esegue un handler contro un payload sintetico | Una regola spostata da `CLAUDE.md` a un hook smette di essere pagata in ogni sessione — il risparmio è la cancellazione, e la sonda è ciò che rende sicuro cancellare. Misurato qui: le sei ricette costano 0 token quando passano e ~22–55 quando scattano | ~41 token (descrizione); il corpo da ~1.610 token, una pagina di ricette e uno script shell si caricano solo all'invocazione | [guida](skills/hook-recipes/SKILL.md) |
 | token-economy | Verifica ogni componente di una configurazione Claude Code per costo in token — misurato via script, mai a occhio — e fissa le regole di design per scrivere skill, agent e file CLAUDE.md snelli fin dall'inizio | Un report di audit prezzato in token sempre attivi con una colonna di rischio per rilievo; un solo rilievo applicato ripaga tipicamente centinaia di volte il costo della skill. Misurato qui: il CLAUDE.md di questo repo è sceso da una lista di regole a un indice da ~430 token usando le sue dimensioni | ~43 token (descrizione); il corpo da ~1.790 token, una pagina di reference e due script shell si caricano solo all'invocazione | [guida](skills/token-economy/SKILL.md) |
 
 ## Struttura
