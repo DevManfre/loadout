@@ -165,7 +165,7 @@ plugin in mezzo.
 
 | Nome | Cosa fa | Cosa ti restituisce | Costo sempre attivo | Documentazione |
 |---|---|---|---|---|
-| token-economy | Verifica ogni componente di una configurazione Claude Code per costo in token — misurato via script, mai a occhio — e fissa le regole di design per scrivere skill, agent e file CLAUDE.md snelli fin dall'inizio | Un report di audit prezzato in token sempre attivi con una colonna di rischio per rilievo; un solo rilievo applicato ripaga tipicamente centinaia di volte il costo della skill. Misurato qui: il CLAUDE.md di questo repo è sceso da una lista di regole a un indice da ~430 token usando le sue dimensioni | ~43 token (descrizione); il corpo da ~1.500 token e due script shell si caricano solo all'invocazione | [guida](skills/token-economy/SKILL.md) |
+| token-economy | Verifica ogni componente di una configurazione Claude Code per costo in token — misurato via script, mai a occhio — e fissa le regole di design per scrivere skill, agent e file CLAUDE.md snelli fin dall'inizio | Un report di audit prezzato in token sempre attivi con una colonna di rischio per rilievo; un solo rilievo applicato ripaga tipicamente centinaia di volte il costo della skill. Misurato qui: il CLAUDE.md di questo repo è sceso da una lista di regole a un indice da ~430 token usando le sue dimensioni | ~43 token (descrizione); il corpo da ~1.790 token, una pagina di reference e due script shell si caricano solo all'invocazione | [guida](skills/token-economy/SKILL.md) |
 
 ## Struttura
 

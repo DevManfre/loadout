@@ -21,10 +21,14 @@ Two modes, same rules:
    scripts/usage.sh 30                 # real invocation counts, last 30 days
    scripts/usage.sh 30 <project_dir>   # same, this project only
    ```
-2. Judge each component against the nine dimensions below.
+   `measure.sh` cannot see MCP tool definitions — the harness sends them, no
+   file holds them. Read that figure off `/context` in a live session of the
+   project and record it with the rest. Limits and the compaction rule behind
+   dimensions 10 and 11: `references/budgets.md`, read on demand.
+2. Judge each component against the eleven dimensions below.
 3. Emit the report (format below). Stop. Apply only the findings the user picks.
 
-## Nine dimensions
+## Eleven dimensions
 
 | # | Check | Flag when | Proposed action |
 |---|-------|-----------|-----------------|
@@ -37,6 +41,8 @@ Two modes, same rules:
 | 7 | Facts vs rules | CLAUDE.md carries facts (versions, module lists, endpoints, layout) | Facts → regenerable `.claude/overview.md` (own update skill) or README; CLAUDE.md keeps a "where is what" table + rules only |
 | 8 | Rule → hook | CLAUDE.md rule is mechanically checkable (path guards, commit format, branch policy, test gate) | Enforce via hook in `.claude/settings.json`; CLAUDE.md keeps only "rules no hook can block" |
 | 9 | Skill body bloat | SKILL.md body > ~1500 tok, or carries heavy reference (API tables, long examples, multi-language duplicates) inline | Move reference to `references/*.md` read on demand; one example, not many; body keeps workflow + judgment rules only |
+| 10 | MCP tool budget | `/context` shows MCP tool definitions above ~10% of the window, or servers are enabled globally rather than per project | Disable the servers this project never calls; keep servers the agent uses, not servers that might be useful |
+| 11 | Compaction discipline | Sessions routinely hit auto-compaction mid-task, losing the plan and keeping the exploration | Compact at a phase boundary instead; if the pattern repeats, enforce the reminder with a hook (see `hook-recipes`) |
 
 ## Authoring rules
 
@@ -73,6 +79,10 @@ The dimensions above, inverted — apply while writing, don't wait for the audit
   the report.
 - **Model fit:** Haiku for mechanical subagents (search, locate, mechanical
   edit, format). Sonnet+ when output needs judgment (review, design, debugging).
+- **A hook saves nothing on its own.** Dimensions 8 and 11 pay only once the
+  prose rule leaves `CLAUDE.md` in the same commit — count the saving from the
+  deleted text. `hook-recipes` carries the mechanics and the four ways a hook
+  silently fails to fire.
 
 ## Report format
 
