@@ -60,6 +60,39 @@ no native ONNX wheel exists for that combination. `dep_applies()` in
 `scripts/lib/probe.sh` is the one place that reads this field; a token whose `when`
 does not match the current platform is treated as satisfied, whatever `probe` says.
 
+## What upstream publishes now
+
+The menu's third row state — `[^]`, installed but behind — needs a pin the machine
+cannot produce on its own, so `entry_latest` asks upstream. Where it asks depends on
+the entry, and the difference is deliberate:
+
+| kind | the pin an install or update would land on |
+|---|---|
+| `pypkg` | `https://pypi.org/pypi/<package>/json`, the `version` in its metadata (the source column's `[extras]` are stripped first) |
+| `plugin` from a `name=owner/repo` marketplace | `git ls-remote https://github.com/<owner>/<repo> HEAD` — the marketplace *is* the plugin's repo, so its head is what installs next |
+| `plugin` from a plain marketplace name | the entry's `source.sha` in `~/.claude/plugins/marketplaces/<market>/.claude-plugin/marketplace.json` — a marketplace that pins its entries hands out its pin, and an upstream that has moved past it is not an update anybody here can take |
+
+An entry reachable only through a proxy has no local pin at all, so `entry_version`
+asks the proxy: `<ANTHROPIC_BASE_URL>/health`, the `version` key of its body. That is
+what lets a container running 0.27.0 against an upstream at 0.37.0 show up as behind
+instead of as a bare "remote"; the row it produces is read-only, because the machine
+that could act on it is not this one.
+
+A sha is then turned into something readable by reading `.claude-plugin/plugin.json`
+at that sha over `raw.githubusercontent.com`; a plugin that declares no `version`
+keeps its 12-character sha, which is also the form `entry_version` reports for it.
+
+Two rules hold this together. **Unknown is an answer**: any failure — offline, a
+timeout, an unparseable manifest — answers `-`, and an entry with an unknown upstream
+stays a plain `[=]` row. A false update row walks somebody off a measured pin, and a
+false "current" hides the release they opened the menu to find. **Nothing is
+remembered**: like install state, the pin is probed per run, never cached to disk.
+
+The seams: `LOADOUT_NO_NET=1` (what `--offline` sets, and what `scripts/selftest.sh`
+exports for the whole suite) turns every upstream probe off; `LOADOUT_NET_TIMEOUT`
+(default 4) caps each call. All of them run at once, in `entry_latest_all`, so the
+menu waits for the slowest probe rather than the sum of them.
+
 ## Adding an entry
 
 The measurement procedure — pinning a revision, measuring it on a real machine,

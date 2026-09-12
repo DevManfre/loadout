@@ -4,6 +4,7 @@
 # than of each command.
 
 INSTALLED=0
+UPDATED=0
 SKIPPED=0
 PROBLEMS=0
 
@@ -15,6 +16,9 @@ PROBLEMS=0
 SELECTION_CONFIRMED=0
 
 _ok()   { INSTALLED=$((INSTALLED + 1)); }
+# Updates are counted apart from installs: one menu run now does both, and a
+# summary that adds them together cannot say which of the two actually ran.
+_ok_up() { UPDATED=$((UPDATED + 1)); }
 _skip() { printf '   %sskip: %s%s\n' "$C_DIM" "$*" "$C_RESET"; SKIPPED=$((SKIPPED + 1)); }
 _fail() { printf '   %sFAIL: %s%s\n' "$C_RED" "$*" "$C_RESET" >&2; PROBLEMS=$((PROBLEMS + 1)); }
 
@@ -109,6 +113,8 @@ install_entry() {
     _skip "declined"; return 0
   fi
 
+  if container_wanted "$name"; then install_container "$name"; return 0; fi
+
   case "$kind" in
     plugin)
       install_marketplace "$name"
@@ -134,6 +140,108 @@ install_entry() {
 
 # The two python entries each need one more thing after the package lands, and
 # neither is a package-manager step.
+# Whether this run should carry an entry as a container rather than as a
+# package. The row in loadout.containers is the offer; Docker being here is
+# what makes it possible; --container answers for a run with no TTY, and an
+# interactive run is asked, once, with both commands already on screen.
+container_wanted() {
+  local name=$1
+  container_field "$name" 2 >/dev/null 2>&1 || return 1
+  have_cmd docker || return 1
+  _in_list "$name" "${OPT_CONTAINER:-}" && return 0
+  [ "${OPT_YES:-0}" -eq 1 ] && return 1
+  [ -t 0 ] || return 1
+  note "$name can run either way on this machine:"
+  note "  package:   $(_python_installer 2>/dev/null || printf 'uv/pipx') tool install $(manifest_field "$name" 3)"
+  note "  container: docker run --name $(container_field "$name" 2) $(container_field "$name" 4) $(container_field "$name" 3)"
+  confirm "run it as a container?"
+}
+
+install_container() {
+  local name=$1 ctr image
+  ctr=$(container_field "$name" 2); image=$(container_field "$name" 3)
+  run docker pull "$image" || { _fail "docker pull $image failed"; return 0; }
+  # Unquoted on purpose: the run column is a list of flags, and quoting it
+  # would hand docker one long argument instead of the flags it spells out.
+  # shellcheck disable=SC2046,SC2086
+  if run docker run --name "$ctr" $(container_field "$name" 4) "$image"; then
+    docker_ps_reset; _ok
+    _post_install_container "$name"
+  else
+    _fail "docker run $ctr failed"
+  fi
+}
+
+_post_install_container() {
+  case "$1" in
+    headroom)
+      note "point the agent at the container:"
+      note "  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787"
+      note "telemetry is on by default upstream; HEADROOM_BEACON=off turns it off." ;;
+  esac
+}
+
+# A container the spec cannot reproduce must not be recreated from the spec:
+# the recreate would silently drop whatever is not written down. Mounts and
+# hand-set env are the two ways that happens — so they are named, and the
+# update stops. Failing closed costs a skipped update; failing open costs data.
+_container_unreproducible() {
+  local ctr=$1 name=$2 mounts img_env ctr_env extra line
+  mounts=$(docker inspect "$ctr" --format '{{range .Mounts}}{{.Destination}} {{end}}' 2>/dev/null)
+  [ -z "$(printf '%s' "$mounts" | tr -d '[:space:]')" ] || {
+    printf 'mounts this row does not declare: %s' "$mounts"; return 0; }
+
+  # Env the image itself sets is not configuration; env only the container
+  # carries is, and the spec has to be the place it is written down.
+  ctr_env=$(docker inspect "$ctr" --format '{{range .Config.Env}}{{println .}}' 2>/dev/null | sort)
+  img_env=$(docker image inspect "$(docker inspect "$ctr" --format '{{.Image}}' 2>/dev/null)" \
+            --format '{{range .Config.Env}}{{println .}}' 2>/dev/null | sort)
+  extra=$(comm -23 <(printf '%s\n' "$ctr_env") <(printf '%s\n' "$img_env") | sed '/^$/d')
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    case " $(container_field "$name" 4) " in
+      *" $line "*) continue ;;
+      *" ${line%%=*}="*) continue ;;
+    esac
+    printf 'environment this row does not declare: %s' "${line%%=*}"
+    return 0
+  done <<< "$extra"
+  return 1
+}
+
+update_container() {
+  local name=$1 ctr image why
+  ctr=$(container_field "$name" 2); image=$(container_field "$name" 3)
+  printf '   container: %s\n' "$ctr"
+  printf '   image:     %s\n' "$image"
+  printf '   running:   %s\n' "$(_local_image_digest "$ctr")"
+  printf '   registry:  %s\n' "$(_registry_digest "$image")"
+  if container_image_moved "$name"; then
+    printf '   ! the update pulls that tag, removes the container and runs it again from this row\n'
+  else
+    printf '   ! the registry serves that same digest — a pull changes nothing, the recreate still restarts it\n'
+  fi
+
+  if why=$(_container_unreproducible "$ctr" "$name"); then
+    note "$why"
+    note "recreating from the catalog row would drop it; update this one by hand."
+    _skip "not reproducible from loadout.containers"
+    return 0
+  fi
+
+  if [ "${SELECTION_CONFIRMED:-0}" -ne 1 ]; then
+    confirm "pull and recreate $ctr?" || { _skip "declined"; return 0; }
+  fi
+  run docker pull "$image" || { _fail "docker pull $image failed"; return 0; }
+  run docker rm -f "$ctr" || { _fail "docker rm -f $ctr failed"; return 0; }
+  # shellcheck disable=SC2046,SC2086
+  if run docker run --name "$ctr" $(container_field "$name" 4) "$image"; then
+    docker_ps_reset; _ok_up
+  else
+    _fail "docker run $ctr failed — the old container is gone, run the command above by hand"
+  fi
+}
+
 _post_install_pypkg() {
   case "$1" in
     graphify)
@@ -188,25 +296,39 @@ _record_asset() {
 
 _asset_sum() { find "${1%/}" -type f -exec cat {} + 2>/dev/null | sha256sum | cut -d' ' -f1; }
 
-# The catalog prices an entry at a specific pin. An update moves to whatever
-# upstream publishes now, and nothing available locally says what that will be:
-# `claude plugin marketplace list --json` carries no version field, and a
-# package index is not consulted until the upgrade runs. So the gate reports
-# what IS known — the pin on disk, and the pin the catalog measured, with its
-# price — and asks. Inventing a target version, or waiving the gate when we
-# cannot find one, both defeat the promise this gate exists to keep.
-pin_gate() {
-  local name=$1 measured installed
+# The catalog prices an entry at a specific pin, and an update moves off it.
+# Three pins decide whether that is a good idea — what is installed, what
+# upstream publishes now (entry_latest, '-' when the network cannot say), and
+# what the catalog actually measured its price on — so all three are printed
+# before anything asks. Nothing is invented: an unknown upstream says so.
+#
+# Split from pin_gate so the install menu can show the same report for a whole
+# batch of updates behind a single prompt, instead of the report existing only
+# inside a per-entry confirmation.
+pin_report() {
+  local name=$1 measured installed latest
   measured=$(manifest_field "$name" 8)
   installed=$(entry_version "$name")
+  latest=$(entry_latest "$name")
 
   printf '   installed: %s\n' "$installed"
+  if [ "$latest" = "-" ]; then
+    printf '   upstream:  unknown from here — an update moves to whatever upstream publishes now\n'
+  else
+    printf '   upstream:  %s — where this update moves it\n' "$latest"
+  fi
   printf '   measured:  %s — the catalog prices this entry at %s on that pin\n' \
     "$measured" "$(manifest_field "$name" 7)"
   if [ "$installed" != "$measured" ]; then
     printf '   ! you are already off the measured pin, so the catalog price does not describe what you have\n'
   fi
-  printf '   ! an update moves to whatever upstream publishes now, which this catalog has not measured\n'
+  if [ "$latest" != "$measured" ]; then
+    printf '   ! the catalog has not measured the pin this update lands on\n'
+  fi
+}
+
+pin_gate() {
+  pin_report "$1"
   confirm "update anyway?"
 }
 
@@ -222,13 +344,21 @@ update_entry() {
     return 0
   fi
 
-  pin_gate "$name" || { _skip "declined"; return 0; }
+  # A container is updated as a container: its own report, its own commands.
+  if entry_is_container "$name"; then update_container "$name"; return 0; fi
+
+  # The install menu prints the same pin report for the whole update set and
+  # takes one answer for it; asking again here would be asking twice for the
+  # consent already given, row by row, on screen.
+  if [ "${SELECTION_CONFIRMED:-0}" -ne 1 ]; then
+    pin_gate "$name" || { _skip "declined"; return 0; }
+  fi
 
   case "$kind" in
     plugin)
       run claude plugin marketplace update "$(plugin_marketplace "$name")" \
         || _fail "marketplace update failed"
-      if run claude plugin update "$name"; then plugin_list_reset; _ok
+      if run claude plugin update "$name"; then plugin_list_reset; _ok_up
       else _fail "claude plugin update $name failed"; fi
       note "a plugin update needs a restart of the agent to take effect" ;;
     pypkg)
@@ -239,7 +369,7 @@ update_entry() {
                 || { _fail "pipx upgrade failed"; return 0; } ;;
         *)    _fail "no python installer on PATH"; return 0 ;;
       esac
-      _ok ;;
+      _ok_up ;;
   esac
 }
 
@@ -284,7 +414,7 @@ update_own_assets() {
     fi
 
     say "$base"
-    if run cp -R "${src%/}" "$dest/"; then _record_asset "$base" "$src"; _ok
+    if run cp -R "${src%/}" "$dest/"; then _record_asset "$base" "$src"; _ok_up
     else _fail "could not update $base"; fi
   done
 }
@@ -302,6 +432,16 @@ remove_entry() {
     return 0
   fi
   confirm "uninstall $name?" || { _skip "declined"; return 0; }
+
+  # A container entry removes as a container, whatever its manifest kind says:
+  # the package was never installed here, the container was. The image is left
+  # on disk — pulling it again is the expensive half, and `docker image rm` is
+  # the user's call, not a side effect of removing one entry.
+  if entry_is_container "$name"; then
+    if run docker rm -f "$(container_field "$name" 2)"; then docker_ps_reset; _ok
+    else _fail "docker rm -f $(container_field "$name" 2) failed"; fi
+    return 0
+  fi
 
   case "$kind" in
     plugin)

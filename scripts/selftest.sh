@@ -12,6 +12,11 @@ export LOADOUT_ROOT
 # Counters live in files, not variables: most tests run inside ( ... ) to scope
 # a uname override or the absent seam, and a variable incremented in a subshell
 # dies with it — the suite would report success while swallowing a real failure.
+# No test may ask the network what upstream publishes. The probes that do are
+# all behind net_probe_ok, so one variable turns every one of them off; the
+# tests that need an answer stub `git` and `curl` and set it back themselves.
+export LOADOUT_NO_NET=1
+
 RESULTS=$(mktemp -d)
 export RESULTS
 trap 'rm -rf "$RESULTS"' EXIT
@@ -62,6 +67,15 @@ stub_dir() {
   # goes for the Claude settings files the proxy probe falls back to — point
   # the lookup at nothing so only a test that plants its own file sees one.
   unset ANTHROPIC_BASE_URL
+  # The plugin CLI's answer is cached in an exported variable, so it survives
+  # into child processes — including the next test's, whose stubs may report
+  # something else entirely.
+  unset LOADOUT_PLUGIN_LIST
+  # Same for Docker: the machine running the suite may well have containers of
+  # its own, and an entry is "installed" the moment one of them shares a name
+  # with a catalog row. Set-but-empty means "no containers", without a CLI call.
+  docker_ps_reset 2>/dev/null || :
+  export LOADOUT_DOCKER_PS=""
   export LOADOUT_SETTINGS_FILES=/dev/null
   STUB=$(mktemp -d)
   STUB_CALLS=$STUB/.calls
@@ -409,7 +423,7 @@ it "update leaves a remote-only entry alone"
 it "remove leaves a remote-only entry alone"
 ( stub_dir; absent headroom; stub claude; stub git; stub uv; stub curl
   export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
-  out=$(HOME=$(mktemp -d) scripts/loadout remove headroom --yes 2>&1)
+  out=$(HOME=$(mktemp -d) scripts/loadout remove headroom --yes --dry-run 2>&1)
   assert_contains "runs remotely" "$out"
   assert_eq "" "$(grep uninstall "$STUB_CALLS")" )
 
@@ -926,6 +940,203 @@ it "a recorded, untouched asset is still updated"
   HOME=$fake LOADOUT_STATE=$state scripts/loadout update --yes >/dev/null 2>&1
   assert_eq "v2" "$(cat "$fake/.claude/skills/example-asset/SKILL.md")" )
 
+# --- upstream and update rows --------------------------------------------
+
+# A machine where caveman is installed at one pin and upstream has moved on.
+# Every seam entry_latest can reach is stubbed and nothing else: `claude` for
+# the installed pin, `git ls-remote` for the plugin repo's head, and `curl` for
+# the package index and for the raw plugin.json at that head. The suite is
+# offline by default (LOADOUT_NO_NET), so a test that wants an answer also has
+# to say so — which is what makes "nothing asked" assertable at all.
+stub_upstream() {
+  cat > "$STUB/claude" <<'EOF'
+#!/usr/bin/env bash
+printf 'claude %s\n' "$*" >> "$STUB_CALLS"
+[ "$1 $2" = "plugin list" ] && echo '[{"id": "caveman@caveman", "version": "aaaaaaaaaaaa"}]'
+exit 0
+EOF
+  cat > "$STUB/git" <<'EOF'
+#!/usr/bin/env bash
+printf 'git %s\n' "$*" >> "$STUB_CALLS"
+[ "$1" = ls-remote ] && printf 'bbbbbbbbbbbbccccccccccccddddddddddddeeeeffff\tHEAD\n'
+exit 0
+EOF
+  cat > "$STUB/curl" <<'EOF'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >> "$STUB_CALLS"
+case "$*" in
+  *pypi.org*)                  printf '{"info":{"version":"9.9.9"}}\n' ;;
+  *raw.githubusercontent.com*) printf '{"name":"caveman"}\n' ;;
+esac
+exit 0
+EOF
+  chmod +x "$STUB/claude" "$STUB/git" "$STUB/curl"
+}
+
+it "nothing asks upstream while the network is off"
+( stub_dir; stub_upstream; stub uv
+  assert_eq "-" "$(entry_latest caveman)"
+  assert_eq "-" "$(entry_latest graphify)"
+  assert_eq "" "$(stub_calls | grep ls-remote)"
+  assert_eq "" "$(stub_calls | grep pypi.org)" )
+
+it "a package's latest pin comes from the index"
+( stub_dir; stub_upstream; stub uv; export LOADOUT_NO_NET=0
+  assert_eq "9.9.9" "$(entry_latest graphify)" )
+
+it "a plugin with no version field is pinned by its short sha"
+( stub_dir; stub_upstream; stub uv; export LOADOUT_NO_NET=0
+  assert_eq "bbbbbbbbbbbb" "$(entry_latest caveman)" )
+
+# A marketplace that pins its entries hands out its pin, not upstream's head:
+# what `claude plugin install` would fetch is the only update anybody here can
+# actually take, so that is the sha the menu compares against.
+it "a pinning marketplace answers from its own manifest"
+( stub_dir; stub_upstream; stub uv; export LOADOUT_NO_NET=0
+  fake_home=$(mktemp -d)
+  mkdir -p "$fake_home/.claude/plugins/marketplaces/claude-plugins-official/.claude-plugin"
+  cat > "$fake_home/.claude/plugins/marketplaces/claude-plugins-official/.claude-plugin/marketplace.json" <<'EOF'
+{
+  "plugins": [
+    {
+      "name": "superpowers",
+      "source": {
+        "url": "https://github.com/obra/superpowers.git",
+        "sha": "1111111111112222222222223333333333334444"
+      }
+    }
+  ]
+}
+EOF
+  assert_eq "111111111111" "$(HOME=$fake_home entry_latest superpowers)"
+  assert_eq "" "$(stub_calls | grep ls-remote)" )
+
+it "an unknown pin on either side is never an update"
+assert_status 1 pin_outdated "-" 0.9.56
+assert_status 1 pin_outdated 0.9.56 "-"
+assert_status 1 pin_outdated "" 0.9.56
+
+it "a pin compares past the v and past the sha's length"
+assert_status 1 pin_outdated v0.37.0 0.37.0
+assert_status 1 pin_outdated aaaaaaaaaaaa aaaaaaaaaaaabbbbbbbbbbbb
+assert_status 0 pin_outdated aaaaaaaaaaaa bbbbbbbbbbbb
+assert_status 0 pin_outdated 0.9.56 0.9.58
+
+it "an entry behind upstream gets its own row, not the installed one"
+( stub_dir; stub_upstream; stub uv; export LOADOUT_NO_NET=0
+  OPT_PRESET=full OPT_ONLY="superpowers,caveman" OPT_EXCEPT=""
+  out=$(printf 'q\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "[^] caveman" "$out"
+  assert_contains "update: aaaaaaaaaaaa → bbbbbbbbbbbb" "$out" )
+
+it "the same entry is a plain installed row when upstream cannot be asked"
+( stub_dir; stub_upstream; stub uv
+  OPT_PRESET=full OPT_ONLY="superpowers,caveman" OPT_EXCEPT=""
+  out=$(printf 'q\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "[=] caveman" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'update:')" )
+
+it "an update row is not selected by default"
+( stub_dir; stub_upstream; stub uv; export LOADOUT_NO_NET=0
+  OPT_PRESET=full OPT_ONLY="superpowers,caveman" OPT_EXCEPT=""
+  out=$(printf '\n' | menu_select $(resolve_selection) 2>/dev/null)
+  assert_contains "superpowers" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'caveman')" )
+
+it "a toggled update row leaves the menu marked as an update"
+( stub_dir; stub_upstream; stub uv; export LOADOUT_NO_NET=0
+  OPT_PRESET=full OPT_ONLY="superpowers,caveman" OPT_EXCEPT=""
+  out=$(printf '2\n\n' | menu_select $(resolve_selection) 2>/dev/null)
+  assert_contains "update:caveman" "$out" )
+
+it "d on an update row names all three pins"
+( stub_dir; stub_upstream; stub uv; export LOADOUT_NO_NET=0
+  OPT_PRESET=full OPT_ONLY="superpowers,caveman" OPT_EXCEPT=""
+  out=$(printf 'd 2\n\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "installed: aaaaaaaaaaaa" "$out"
+  assert_contains "upstream:  bbbbbbbbbbbb" "$out"
+  assert_contains "measured:" "$out" )
+
+it "an update chosen in the menu updates instead of installing"
+( stub_dir; stub_upstream; stub uv; absent graphify,headroom,docker; export LOADOUT_NO_NET=0
+  out=$(HOME=$(mktemp -d) LOADOUT_PLAIN_MENU=1 \
+        run_with_pty $'5\n\ny\n' scripts/loadout install --dry-run)
+  assert_contains "run: claude plugin update caveman" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'plugin install caveman@')"
+  assert_contains "1 updated" "$out" )
+
+it "a declined update block installs the rest and moves no pin"
+( stub_dir; stub_upstream; stub uv; absent graphify,headroom,docker; export LOADOUT_NO_NET=0
+  out=$(HOME=$(mktemp -d) LOADOUT_PLAIN_MENU=1 \
+        run_with_pty $'5\n\nn\n' scripts/loadout install --dry-run)
+  assert_eq "" "$(printf '%s' "$out" | grep 'plugin update caveman')"
+  assert_contains "0 updated" "$out" )
+
+# A proxy is the only thing that can name the pin a remote install runs at, and
+# it only does so if asked: /health, one key out of the body. These stub curl
+# to answer that and nothing else, so a test can tell "the proxy said 0.27.0"
+# apart from "the proxy answered at all".
+stub_proxy_health() {
+  cat > "$STUB/curl" <<'EOF'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >> "$STUB_CALLS"
+case "$*" in
+  */health)   printf '{"service":"headroom-proxy","status":"healthy","version":"0.27.0"}\n' ;;
+  *pypi.org*) printf '{"info":{"version":"0.37.0"}}\n' ;;
+esac
+exit 0
+EOF
+  chmod +x "$STUB/curl"
+}
+
+it "a reachable proxy names the pin it is running"
+( stub_dir; absent headroom; stub_proxy_health
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  assert_eq "0.27.0" "$(entry_version headroom)" )
+
+it "a proxy that will not name a version is still just remote"
+( stub_dir; absent headroom; stub curl
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  assert_eq "-" "$(entry_version headroom)" )
+
+it "status prints the remote pin next to remote"
+( stub_dir; absent headroom,graphify; stub claude; stub_proxy_health
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  out=$(HOME=$(mktemp -d) scripts/loadout status 2>&1)
+  assert_contains "remote 0.27.0" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep DRIFT)" )
+
+# The row exists to be read, not pressed: the machine that could act on it is
+# not this one, and a silent current-looking row would be the actual bug.
+it "an entry behind upstream but running remotely says where it lives"
+( stub_dir; absent headroom,graphify; stub claude; stub git; stub uv
+  stub_proxy_health; export LOADOUT_NO_NET=0
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  OPT_PRESET=full OPT_ONLY="headroom,superpowers" OPT_EXCEPT=""
+  out=$(printf 'q\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "update: 0.27.0 → 0.37.0" "$out"
+  assert_contains "runs remotely" "$out" )
+
+it "a remote update row cannot be toggled into the selection"
+( stub_dir; absent headroom,graphify; stub claude; stub git; stub uv
+  stub_proxy_health; export LOADOUT_NO_NET=0
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  OPT_PRESET=full OPT_ONLY="headroom,superpowers" OPT_EXCEPT=""
+  out=$(printf '2\n\n' | menu_select $(resolve_selection) 2>/dev/null)
+  err=$(printf '2\n\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_eq "" "$(printf '%s' "$out" | grep headroom)"
+  assert_contains "runs remotely" "$err" )
+
+it "d on a remote update row says the update runs elsewhere"
+( stub_dir; absent headroom,graphify; stub claude; stub git; stub uv
+  stub_proxy_health; export LOADOUT_NO_NET=0
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  OPT_PRESET=full OPT_ONLY="headroom,superpowers" OPT_EXCEPT=""
+  out=$(printf 'd 2\n\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "installed: 0.27.0" "$out"
+  assert_contains "upstream:  0.37.0" "$out"
+  assert_contains "not on this machine" "$out" )
+
 # --- remove --------------------------------------------------------------
 it "remove needs an entry name"
 assert_status 2 scripts/loadout remove
@@ -986,6 +1197,138 @@ INNEREOF
   out=$(HOME=$(mktemp -d) scripts/loadout remove caveman --yes 2>&1)
   assert_contains "FAIL" "$out"
   assert_contains "claude plugin uninstall caveman failed" "$out" )
+
+# --- containers ----------------------------------------------------------
+
+# A machine with the catalog's own container on it. The stub answers the four
+# questions the code asks docker — what image the container runs, what digest
+# that image was pulled at, what it has mounted, what env it carries — and
+# records every call, so a test can assert what was run as well as what was
+# read. FAKE_* let one stub play both "already current" and "a new build".
+stub_docker() {
+  export LOADOUT_DOCKER_PS="headroom"
+  docker_ps_reset 2>/dev/null || :
+  export LOADOUT_DOCKER_PS="headroom"
+  cat > "$STUB/docker" <<'EOF'
+#!/usr/bin/env bash
+printf 'docker %s\n' "$*" >> "$STUB_CALLS"
+first=$1
+case "$first:$*" in
+  image:*RepoDigests*) printf 'ghcr.io/chopratejas/headroom@sha256:%s\n' "${FAKE_LOCAL_DIGEST:-aaaa}" ;;
+  image:*image.version*) printf '%s\n' "${FAKE_IMAGE_VERSION:-0.27.0}" ;;
+  image:*Config.Env*)  printf 'PATH=/usr/bin\n' ;;
+  *:*{{.Image}}*)      printf 'sha256:localimage\n' ;;
+  *:*.Mounts*)         printf '%s' "${FAKE_MOUNTS:-}" ;;
+  *:*Config.Env*)      printf 'PATH=/usr/bin\n'; [ -z "${FAKE_CTR_ENV:-}" ] || printf '%s\n' "$FAKE_CTR_ENV" ;;
+esac
+exit 0
+EOF
+  chmod +x "$STUB/docker"
+}
+
+# The registry side of the same question: a token for the asking, and one
+# digest for the tag.
+stub_registry() {
+  cat > "$STUB/curl" <<'EOF'
+#!/usr/bin/env bash
+printf 'curl %s\n' "$*" >> "$STUB_CALLS"
+case "$*" in
+  *"/token?"*)  printf '{"token":"t"}\n' ;;
+  *"/manifests/"*) printf 'docker-content-digest: sha256:%s\r\n' "${FAKE_REMOTE_DIGEST:-aaaa}" ;;
+  */health)     printf '{"version":"0.27.0"}\n' ;;
+  *pypi.org*)   printf '{"info":{"version":"0.37.0"}}\n' ;;
+esac
+exit 0
+EOF
+  chmod +x "$STUB/curl"
+}
+
+it "a container counts as installed, and as installed here"
+( stub_dir; absent headroom; stub_docker
+  assert_status 0 entry_installed headroom
+  assert_status 0 entry_installed_locally headroom
+  assert_status 0 entry_is_container headroom )
+
+it "an entry with no container row never reaches docker"
+( stub_dir; stub_docker; stub uv; stub graphify
+  entry_is_container graphify
+  assert_status 1 entry_is_container graphify
+  assert_eq "" "$(stub_calls | grep '^docker')" )
+
+it "the same digest on both sides is not a new build"
+( stub_dir; absent headroom; stub_docker; stub_registry
+  export LOADOUT_NO_NET=0 FAKE_LOCAL_DIGEST=aaaa FAKE_REMOTE_DIGEST=aaaa
+  assert_status 1 container_image_moved headroom )
+
+it "a digest the registry has moved on from is a new build"
+( stub_dir; absent headroom; stub_docker; stub_registry
+  export LOADOUT_NO_NET=0 FAKE_LOCAL_DIGEST=aaaa FAKE_REMOTE_DIGEST=bbbb
+  assert_status 0 container_image_moved headroom )
+
+# The package index is free to publish a version the registry has no image
+# for — headroom's own case — so a container is judged by its image and by
+# nothing else.
+it "a container is never judged by the package index"
+( stub_dir; absent headroom,graphify; stub_docker; stub_registry
+  export LOADOUT_NO_NET=0 FAKE_LOCAL_DIGEST=aaaa FAKE_REMOTE_DIGEST=aaaa
+  stub claude; stub git; stub uv
+  OPT_PRESET=full OPT_ONLY="headroom,superpowers" OPT_EXCEPT=""
+  out=$(printf 'q\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "[=] headroom" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep '0.37.0')" )
+
+it "a moved image gets a selectable update row naming the image"
+( stub_dir; absent headroom,graphify; stub_docker; stub_registry
+  export LOADOUT_NO_NET=0 FAKE_LOCAL_DIGEST=aaaa FAKE_REMOTE_DIGEST=bbbb
+  stub claude; stub git; stub uv
+  OPT_PRESET=full OPT_ONLY="headroom,superpowers" OPT_EXCEPT=""
+  out=$(printf 'q\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "[^] headroom" "$out"
+  assert_contains "new build of ghcr.io/chopratejas/headroom:latest" "$out"
+  assert_contains "running 0.27.0" "$out" )
+
+it "--container installs the container instead of the package"
+( stub_dir; absent headroom,graphify; export LOADOUT_DOCKER_PS=""
+  stub docker; stub_registry; stub claude; stub uv
+  out=$(HOME=$(mktemp -d) scripts/loadout install --dry-run --yes \
+        --only headroom --container headroom 2>&1)
+  assert_contains "docker pull ghcr.io/chopratejas/headroom:latest" "$out"
+  assert_contains "docker run --name headroom -d --restart unless-stopped -p 8787:8787" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'uv tool install')" )
+
+it "--container on an entry that has no container row exits 2"
+( stub_dir; stub claude
+  assert_status 2 scripts/loadout install --dry-run --yes --container graphify )
+
+it "a container update pulls, removes and runs again, in that order"
+( stub_dir; absent headroom,graphify; stub_docker; stub_registry; stub claude; stub uv
+  export LOADOUT_NO_NET=0 FAKE_LOCAL_DIGEST=aaaa FAKE_REMOTE_DIGEST=bbbb
+  out=$(HOME=$(mktemp -d) scripts/loadout update --dry-run --yes --only headroom 2>&1)
+  assert_eq "pull rm run" "$(printf '%s\n' "$out" | sed -n 's/^ *run: docker \([a-z]*\).*/\1/p' | tr '\n' ' ' | sed 's/ $//')"
+  assert_contains "1 updated" "$out" )
+
+# Recreating from the row would silently drop whatever the row does not say.
+it "a container with a mount is refused, not recreated"
+( stub_dir; absent headroom,graphify; stub_docker; stub_registry; stub claude; stub uv
+  export LOADOUT_NO_NET=0 FAKE_LOCAL_DIGEST=aaaa FAKE_REMOTE_DIGEST=bbbb
+  export FAKE_MOUNTS="/var/lib/data "
+  out=$(HOME=$(mktemp -d) scripts/loadout update --dry-run --yes --only headroom 2>&1)
+  assert_contains "mounts this row does not declare" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'docker rm')" )
+
+it "a container carrying env the row does not declare is refused too"
+( stub_dir; absent headroom,graphify; stub_docker; stub_registry; stub claude; stub uv
+  export LOADOUT_NO_NET=0 FAKE_LOCAL_DIGEST=aaaa FAKE_REMOTE_DIGEST=bbbb
+  export FAKE_CTR_ENV="HEADROOM_BEACON=off"
+  out=$(HOME=$(mktemp -d) scripts/loadout update --dry-run --yes --only headroom 2>&1)
+  assert_contains "environment this row does not declare: HEADROOM_BEACON" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'docker rm')" )
+
+it "removing a container entry removes the container, not a package"
+( stub_dir; absent headroom,graphify; stub_docker; stub_registry; stub claude; stub uv
+  out=$(HOME=$(mktemp -d) scripts/loadout remove headroom --yes --dry-run 2>&1)
+  assert_contains "docker rm -f headroom" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep 'uv tool uninstall')" )
 
 # --- validation ----------------------------------------------------------
 it "validate passes on the repo as it stands"

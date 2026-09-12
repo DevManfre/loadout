@@ -9,7 +9,7 @@
 # Usage: scripts/loadout <command> [options]
 #
 # Commands:
-#   install            choose what to install, then install it
+#   install            choose what to install or update, then do it
 #   update             upgrade what is already installed
 #   status             what is installed, at what pin, what it costs
 #   doctor             dependency report; changes nothing
@@ -22,6 +22,8 @@
 #   --except a,b       everything but these entries
 #   --scope <s>        user, project or local (default: user)
 #   -y, --yes          accept every printed cost up front (required with no TTY)
+#   --container a,b    carry these entries as containers, not as packages
+#   --offline          never ask upstream what it publishes (no update rows)
 #   -n, --dry-run      print every step and change nothing
 #   -h, --help         this text
 set -uo pipefail
@@ -45,6 +47,7 @@ OPT_SCOPE=user
 OPT_PRESET=full
 OPT_ONLY=""
 OPT_EXCEPT=""
+OPT_CONTAINER=""
 ARGS=""
 
 while [ $# -gt 0 ]; do
@@ -52,6 +55,7 @@ while [ $# -gt 0 ]; do
     -h|--help) usage; exit 0 ;;
     -y|--yes) OPT_YES=1; shift ;;
     -n|--dry-run) OPT_DRY_RUN=1; shift ;;
+    --offline) LOADOUT_NO_NET=1; export LOADOUT_NO_NET; shift ;;
     --scope) OPT_SCOPE=${2:?--scope needs a value}; shift 2 ;;
     --scope=*) OPT_SCOPE=${1#*=}; shift ;;
     --preset) OPT_PRESET=${2:?--preset needs a value}; shift 2 ;;
@@ -60,6 +64,8 @@ while [ $# -gt 0 ]; do
     --only=*) OPT_ONLY=${1#*=}; shift ;;
     --except) OPT_EXCEPT=${2:?--except needs a value}; shift 2 ;;
     --except=*) OPT_EXCEPT=${1#*=}; shift ;;
+    --container) OPT_CONTAINER=${2:?--container needs a value}; shift 2 ;;
+    --container=*) OPT_CONTAINER=${1#*=}; shift ;;
     # Kept so the old flags in the README and in people's history keep working.
     --skip-graphify) OPT_EXCEPT="${OPT_EXCEPT:+$OPT_EXCEPT,}graphify"
       note "--skip-graphify is deprecated; use --except graphify"; shift ;;
@@ -114,15 +120,18 @@ cmd_status() {
       installed=$(entry_version "$name")
     elif entry_installed "$name"; then
       # A live proxy answering from a container or another host: nothing on
-      # this machine to read a pin from, but "not installed" would be a lie.
-      installed="remote"
+      # this machine to read a pin from, but "not installed" would be a lie —
+      # and a proxy that names its own version in /health turns "remote" into
+      # a pin somebody can compare against the catalog.
+      installed=$(entry_version "$name")
+      case "$installed" in -) installed="remote" ;; *) installed="remote $installed" ;; esac
     else
       installed="not installed"
     fi
     measured=$(manifest_field "$name" 8)
     drift=""
     case "$installed" in
-      "not installed"|remote|-) ;;
+      "not installed"|remote*|-) ;;
       "$measured") ;;
       *) drift="DRIFT" ;;
     esac
@@ -171,6 +180,19 @@ cmd_install() {
     fi
   fi
 
+  # The menu marks its update rows: an install and an update run different
+  # code, ask for different consent and are counted apart, so a bare name
+  # cannot carry both and the two sets part company here, once.
+  local -a updates=() installs=()
+  for name in "${selection[@]:-}"; do
+    [ -n "$name" ] || continue
+    case "$name" in
+      update:*) updates+=("${name#update:}") ;;
+      *)        installs+=("$name") ;;
+    esac
+  done
+  selection=("${installs[@]:-}")
+
   # An entry named explicitly but blocked must say why rather than vanish.
   if [ -n "$OPT_ONLY" ]; then
     for name in $(printf '%s' "$OPT_ONLY" | tr ',' ' '); do
@@ -197,13 +219,32 @@ cmd_install() {
     for name in "${selection[@]}"; do install_entry "$name"; done
   fi
 
+  # Updates come after the installs: moving something already in use off its
+  # pin is the heavier half of the run, and it is priced as its own block —
+  # every pin on screen, then one answer for the set, because the menu already
+  # showed each row as `installed → upstream` and Enter was pressed on it.
+  if [ "${#updates[@]}" -gt 0 ] && [ -n "${updates[0]:-}" ]; then
+    say "updates"
+    for name in "${updates[@]}"; do
+      printf '   %s\n' "$name"
+      pin_report "$name"
+    done
+    if confirm "move these ${#updates[@]} off the pins above?"; then
+      for name in "${updates[@]}"; do update_entry "$name"; done
+    else
+      note "declined; nothing was updated"
+      SKIPPED=$((SKIPPED + ${#updates[@]}))
+    fi
+  fi
+
   local asset_root
   if [ "$OPT_SCOPE" = user ]; then asset_root=$HOME/.claude; else asset_root=$ORIGIN_DIR/.claude; fi
   say "loadout's own assets"
   cost "one description each in the skill or agent index; bodies load only when invoked"
   copy_own_assets "$asset_root"
 
-  printf '\n== done: %d installed, %d skipped, %d failed\n' "$INSTALLED" "$SKIPPED" "$PROBLEMS"
+  printf '\n== done: %d installed, %d updated, %d skipped, %d failed\n' \
+    "$INSTALLED" "$UPDATED" "$SKIPPED" "$PROBLEMS"
   [ "$OPT_DRY_RUN" -eq 1 ] && note "(dry run — nothing was changed)"
   note "too heavy in practice? '/plugin disable <name>' drops it from context without uninstalling."
   [ "$PROBLEMS" -eq 0 ]
@@ -228,7 +269,7 @@ cmd_update() {
   done
   if [ "$OPT_SCOPE" = user ]; then asset_root=$HOME/.claude; else asset_root=$ORIGIN_DIR/.claude; fi
   update_own_assets "$asset_root"
-  printf '\n== done: %d updated, %d skipped, %d failed\n' "$INSTALLED" "$SKIPPED" "$PROBLEMS"
+  printf '\n== done: %d updated, %d skipped, %d failed\n' "$UPDATED" "$SKIPPED" "$PROBLEMS"
   [ "$PROBLEMS" -eq 0 ]
 }
 
@@ -271,6 +312,17 @@ _check_known_names() {
 }
 [ -z "$OPT_ONLY" ]   || _check_known_names --only "$OPT_ONLY"
 [ -z "$OPT_EXCEPT" ] || _check_known_names --except "$OPT_EXCEPT"
+# A name here must also be an entry that can actually run as a container, or
+# the flag would be accepted and then quietly do nothing.
+if [ -n "$OPT_CONTAINER" ]; then
+  _check_known_names --container "$OPT_CONTAINER"
+  for tok in $(printf '%s' "$OPT_CONTAINER" | tr ',' ' '); do
+    container_field "$tok" 2 >/dev/null 2>&1 || {
+      printf 'no container for %s (see: scripts/loadout.containers)\n' "$tok" >&2
+      exit 2
+    }
+  done
+fi
 
 case "$SUBCOMMAND" in
   doctor) cmd_doctor ;;

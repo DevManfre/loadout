@@ -43,12 +43,12 @@ tutte. Deselezionarne una è un atto deliberato, preso con il suo costo già a s
 ```
     #  entry        cost/session           status
  ▸  1 [x] superpowers  ~800                   ready
-    2 [x] caveman      ~2,480 +60/prompt      ready
-    3 [x] graphify     ~340 +48-105/toolcall  ready
-    4 [x] headroom     none                   ready
-    5 [x] impeccable   ~560 +0-475/edit       ready
+    2 [x] graphify     ~340 +48-105/toolcall  ready
+    3 [x] headroom     none                   ready
+    4 [^] caveman      ~2,480 +60/prompt      update: 84cc3c14fa1e → v2.6.0
+    5 [=] impeccable   ~560 +0-475/edit       installed @ v4.3.1
 
-↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=install 5 · q=quit
+↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=apply 3 · q=quit
 ```
 
 `▸` indica la riga corrente: le frecce la spostano, Space la toggla, `d` la spiega, e
@@ -61,6 +61,29 @@ risposta può togglare più righe (`1 3`).
 Una voce bloccata resta numerata ma non può essere selezionata; `d` sulla sua riga
 stampa cosa manca, perché la voce ne ha bisogno, come risolverlo e quanto costa
 saltarla.
+
+Un solo menu risponde a tutte e tre le domande su una voce: `[ ]`/`[x]` non è
+installata, `[=]` è installata e aggiornata, `[^]` è installata ma indietro rispetto a
+quello che l'upstream pubblica ora, con entrambi i pin sulla sua riga. Una riga di
+aggiornamento è selezionabile ma mai preselezionata — un aggiornamento sposta qualcosa
+che già funziona fuori dal pin misurato da questo catalogo — e Invio applica
+installazioni e aggiornamenti nella stessa passata, stampando ogni pin che sta per
+spostare e chiedendo conferma una volta sola per l'insieme. `d` su una riga di
+aggiornamento stampa i tre pin che decidono: installato, upstream, e quello su cui il
+catalogo ha misurato il prezzo della voce.
+
+Una voce che gira dove questa macchina non arriva — headroom dietro un proxy, in un
+container o sull'host Windows — viene misurata sul pin che il suo endpoint `/health`
+dichiara, quindi ottiene anch'essa una riga `[^]`. Quella riga è di sola lettura: nomina
+entrambi i pin e dice di aggiornarla dove gira, perché da qui non si può.
+`scripts/loadout status` stampa lo stesso pin come `remote 0.27.0`.
+
+Il controllo sull'upstream parte all'apertura del menu: un `git ls-remote` per ogni
+plugin, l'indice dei pacchetti per ogni pacchetto, ogni chiamata con un tetto di tempo
+e tutte insieme — circa un secondo in totale, e non viene ricordato da nessuna parte.
+`--offline` (o `LOADOUT_NO_NET=1`) lo salta, e lo stesso vale per un upstream
+irraggiungibile: la voce resta una normale riga `[=]` invece di dichiararsi aggiornata
+o indietro.
 
 Una dipendenza l'installer sa procurarsela da solo: **uv**. Una voce a cui manca solo
 uv/pipx non è bloccata — la sua riga resta selezionabile e riporta `needs uv/pipx
@@ -79,6 +102,7 @@ git, Claude Code, Docker — resta da installare a mano.
 | `--scope user\|project\|local` | Destinazione dell'installazione (default: `user`) |
 | `-y`, `--yes` | Accetta in anticipo tutti i costi stampati (obbligatoria senza TTY) |
 | `-n`, `--dry-run` | Stampa ogni passo e ogni costo, senza modificare nulla |
+| `--offline` | Non chiede mai all'upstream cosa pubblica — nessuna riga di aggiornamento |
 
 Ogni comando è idempotente. Un plugin, un binario o un asset già installato viene
 segnalato e saltato, quindi rieseguirlo copre solo quello che manca.
@@ -86,10 +110,10 @@ segnalato e saltato, quindi rieseguirlo copre solo quello che manca.
 ### Aggiornamento
 
 `scripts/loadout update` non aggiorna mai in silenzio. Per ogni voce installata
-stampa il pin su disco, il pin misurato dal catalogo e quanto costa quel pin, avvisa
-se sei già fuori dal pin misurato, e dichiara che un aggiornamento sposta a qualunque
-cosa l'upstream pubblichi ora — un pin che questo catalogo non ha misurato — prima di
-chiedere conferma. caveman è la voce agli atti sul perché quel gate esiste: la stessa
+stampa il pin su disco, il pin che l'upstream pubblica ora, il pin misurato dal
+catalogo e quanto costa quel pin, avvisa se sei già fuori dal pin misurato, e dichiara
+quando il pin su cui l'aggiornamento atterra è uno che questo catalogo non ha misurato
+— prima di chiedere conferma. caveman è la voce agli atti sul perché quel gate esiste: la stessa
 skill costava ~780 token a sessione sul pin `84cc3c14fa1e` e ~2.480 su `v2.6.0`, a un
 solo numero di versione di distanza. `--yes` accetta in anticipo ogni gate.
 

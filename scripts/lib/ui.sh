@@ -121,6 +121,31 @@ _menu_installed_ver() {
   return 0
 }
 
+# The upstream pin _menu_prepare already paid for, out of the caller's
+# latest_map. Nothing here probes: the map is the menu's whole knowledge of
+# upstream, and a name missing from it answers empty, which reads as unknown.
+_menu_latest() {
+  printf '%s\n' "${latest_map:-}" | awk -v n="$1" '$1 == n { print $2; exit }'
+}
+
+# What an update row is offering, in the three lines pin_report prints before
+# an update actually runs.
+_menu_why_update() {
+  printf 'installed: %s\n' "$(entry_version "$1")"
+  if entry_is_container "$1"; then
+    printf 'container: %s\n' "$(container_field "$1" 2)"
+    printf 'image:     %s — the update pulls this tag and recreates the container\n' \
+      "$(container_field "$1" 3)"
+    return 0
+  fi
+  if printf '%s\n' "${remote_behind[@]:-}" | grep -qx "$1"; then
+    printf 'where:     not on this machine — a proxy answers for it, so the update runs there\n'
+  fi
+  printf 'upstream:  %s — where an update would move it\n' "$(_menu_latest "$1")"
+  printf 'measured:  %s — the pin the catalog priced this entry on (%s)\n' \
+    "$(manifest_field "$1" 8)" "$(manifest_field "$1" 7)"
+}
+
 # The status column for a selectable row.
 _menu_status() {
   local soft
@@ -154,30 +179,86 @@ _menu_own_assets() {
 # blocked, rows, row_mark, row_cost, row_status, own_line.
 _menu_prepare() {
   local name idx
+  # Warm the plugin CLI's answer here, in this shell, before anything asks for
+  # it from inside a $( ): the first caller pays the second it costs, and
+  # every later one — including the ones in subshells — reads the export.
+  _plugin_list >/dev/null
   # Installed and blocked entries are shown but cannot be chosen; that is the
   # whole point of showing them — the menu is the installer's whole view of
   # the catalog, and an invisible entry reads as "not carried" rather than
   # "already done". Only unfixable blocks land in blocked — an entry whose
   # blocks the installer can fix itself is selectable and says so on its row.
-  installed=() blocked=()
+  installed=() blocked=() updatable=() remote_behind=() image_behind=()
   for name in $(manifest_names); do
     if entry_installed "$name"; then installed+=("$name")
     elif [ -n "$(entry_hard_blocks "$name")" ]; then blocked+=("$name")
     fi
   done
+  # What upstream publishes now, asked once, for installed entries only —
+  # nothing else can be behind anything. The answer costs the network, so it is
+  # paid here with the rest of the row pricing and never inside the redraw
+  # loop; entry_latest_all asks about every entry at the same time, so the menu
+  # waits for the slowest probe rather than for the sum of them.
+  latest_map=$(entry_latest_all "${installed[@]:-}")
+  local -a current=()
+  for name in "${installed[@]:-}"; do
+    [ -n "$name" ] || continue
+    # An unknown pin on either side (offline, a timeout, a proxy that will not
+    # name its version) leaves the entry on its plain installed row rather than
+    # claiming it is either current or behind.
+    # A container is judged by its image, not by a version string: what an
+    # update can deliver is whatever the registry serves for that tag, and the
+    # package index is free to publish a version no image exists for.
+    if entry_is_container "$name"; then
+      if container_image_moved "$name"; then image_behind+=("$name")
+      else current+=("$name"); fi
+      continue
+    fi
+    if ! pin_outdated "$(entry_version "$name")" "$(_menu_latest "$name")"; then
+      current+=("$name")
+    elif entry_installed_locally "$name"; then
+      updatable+=("$name")
+    else
+      # Behind, but running somewhere this machine cannot reach — a container,
+      # or the Windows host under WSL. Saying so is the point: the row cannot
+      # be actioned from here, and silence would read as "current".
+      remote_behind+=("$name")
+    fi
+  done
+  installed=("${current[@]:-}")
   # One array, in display order: selectable rows first, installed then
   # blocked rows after. Built with explicit appends because "${arr[@]:-}"
   # on an empty array expands to a single empty argument, which would
   # shift every row number.
   rows=()
   for name in "${all[@]:-}";       do [ -n "$name" ] && rows+=("$name"); done
+  for name in "${updatable[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
+  for name in "${image_behind[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
+  for name in "${remote_behind[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
   for name in "${installed[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
   for name in "${blocked[@]:-}";   do [ -n "$name" ] && rows+=("$name"); done
   row_mark=() row_cost=() row_status=()
   for idx in "${!rows[@]}"; do
     name=${rows[$idx]}
     row_cost[idx]=$(manifest_field "$name" 7)
-    if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
+    if printf '%s\n' "${image_behind[@]:-}" | grep -qx "$name"; then
+      # Selectable: the container is on this machine, so the pull and the
+      # recreate can both happen from here.
+      row_mark[idx]="^"
+      row_status[idx]="update: new build of $(container_field "$name" 3) (running $(entry_version "$name"))"
+    elif printf '%s\n' "${remote_behind[@]:-}" | grep -qx "$name"; then
+      # Same mark, no action: the pins are the news, and the machine that could
+      # act on them is not this one.
+      row_mark[idx]="^"
+      row_status[idx]="update: $(entry_version "$name") → $(_menu_latest "$name") — runs remotely, update it there"
+    elif printf '%s\n' "${updatable[@]:-}" | grep -qx "$name"; then
+      # Selectable like a new entry, and toggled off like one: an update is a
+      # mutation on something that already works, so it is offered, not
+      # assumed. _menu_toggle lets it through because it is in neither the
+      # installed nor the blocked list.
+      row_mark[idx]="^"
+      row_status[idx]="update: $(entry_version "$name") → $(_menu_latest "$name")"
+    elif printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
       row_mark[idx]="="
       if entry_installed_locally "$name"; then
         row_status[idx]="installed$(_menu_installed_ver "$name")"
@@ -201,6 +282,10 @@ _menu_toggle() {
   local idx=$1 name t
   name=${rows[$idx]:-}
   [ -n "$name" ] || { feedback="no row $((idx + 1))"; return 0; }
+  if printf '%s\n' "${remote_behind[@]:-}" | grep -qx "$name"; then
+    feedback="$name runs remotely — update it where it runs, not from here"
+    return 0
+  fi
   if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
     feedback="$name already installed (remove: scripts/loadout remove $name)"
     return 0
@@ -224,8 +309,9 @@ _menu_toggle() {
 # cursor movement: this has to work under a pipe and on any terminal.
 _menu_plain() {
   local -a all=("$@") chosen=() rows=()
-  local -a installed=() blocked=() row_mark=() row_cost=() row_status=()
-  local i name reply idx token mark feedback="" own_line=""
+  local -a installed=() blocked=() updatable=() remote_behind=() image_behind=()
+  local -a row_mark=() row_cost=() row_status=()
+  local i name reply idx token mark feedback="" own_line="" latest_map=""
   for name in "${all[@]}"; do chosen+=("$name"); done
 
   _menu_prepare
@@ -239,14 +325,16 @@ _menu_plain() {
       name=${rows[$idx]}
       i=$((idx + 1))
       mark=${row_mark[$idx]}
-      if [ "$mark" = " " ]; then
+      # '^' is selectable too, so it takes the same 'x' when chosen; the status
+      # column is what keeps saying which of the two actions the row is.
+      if [ "$mark" = " " ] || [ "$mark" = "^" ]; then
         if printf '%s\n' "${chosen[@]:-}" | grep -qx "$name"; then mark="x"; fi
       fi
       printf '  %d [%s] %-12s %-22s %s\n' \
         "$i" "$mark" "$name" "${row_cost[$idx]}" "${row_status[$idx]}" >&2
     done
     [ -z "$own_line" ] || printf '\n  %s\n' "$own_line" >&2
-    printf '\ntoggle 1-%d · a=all · n=none · d <n>=why · Enter=install %d · q=quit\n> ' \
+    printf '\ntoggle 1-%d · a=all · n=none · d <n>=why · Enter=apply %d · q=quit\n> ' \
       "${#rows[@]}" "$(_menu_count)" >&2
 
     read -r reply || reply=""
@@ -259,6 +347,11 @@ _menu_plain() {
         idx=${reply#d}; idx=${idx# }
         name=$(_menu_row "$idx") || {
           printf '   d needs a row number, e.g. d 2\n' >&2; continue; }
+        if printf '%s\n' "${updatable[@]:-}" "${image_behind[@]:-}" "${remote_behind[@]:-}" \
+           | grep -qx "$name"; then
+          _menu_why_update "$name" | sed 's/^/   /' >&2
+          continue
+        fi
         if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
           printf '   %s already installed (remove: scripts/loadout remove %s)\n' \
             "$name" "$name" >&2
@@ -288,6 +381,12 @@ _menu_plain() {
   # Print in manifest order, not toggle order, so the install sequence is stable.
   for name in "${all[@]}"; do
     printf '%s\n' "${chosen[@]:-}" | grep -qx "$name" && printf '%s\n' "$name"
+  done
+  # Update rows leave by the same door, marked: the caller has to tell an
+  # install from an update, and a bare name cannot say which it is.
+  for name in "${updatable[@]:-}"; do
+    [ -n "$name" ] || continue
+    printf '%s\n' "${chosen[@]:-}" | grep -qx "$name" && printf 'update:%s\n' "$name"
   done
   return 0
 }
@@ -324,8 +423,9 @@ _menu_restore() {
 # instead of scrolling one copy of itself per keystroke.
 _menu_interactive() {
   local -a all=("$@") chosen=() rows=()
-  local -a installed=() blocked=() row_mark=() row_cost=() row_status=()
-  local i name cur=0 key seq idx token feedback="" drawn=0 inplace=0
+  local -a installed=() blocked=() updatable=() remote_behind=() image_behind=()
+  local -a row_mark=() row_cost=() row_status=()
+  local i name cur=0 key seq idx token feedback="" drawn=0 inplace=0 latest_map=""
   local status line mark cursor frame_lines=0 last_frame=0 fline stty_saved=""
   local frame_buf="" own_line=""
   for name in "${all[@]}"; do [ -n "$name" ] && chosen+=("$name"); done
@@ -372,7 +472,7 @@ _menu_interactive() {
     done
     [ -z "$own_line" ] || _menu_ln "   ${C_DIM}${own_line}${C_RESET}"
     _menu_ln ""
-    _menu_ln "${C_BOLD}↑/↓${C_RESET} move · ${C_BOLD}Space${C_RESET} toggle · d=why · a=all · n=none · ${C_BOLD}Enter${C_RESET}=install $(_menu_count) · q=quit"
+    _menu_ln "${C_BOLD}↑/↓${C_RESET} move · ${C_BOLD}Space${C_RESET} toggle · d=why · a=all · n=none · ${C_BOLD}Enter${C_RESET}=apply $(_menu_count) · q=quit"
     # The feedback area holds one line ("toggled graphify off") or a whole
     # explanation from d — the frame grows to fit and the next redraw's
     # height comes from frame_lines, so nothing scrolls either way.
@@ -426,6 +526,11 @@ _menu_interactive() {
         # The explanation renders inside the frame's feedback area, so it
         # replaces the previous frame like any other keystroke instead of
         # pushing a second copy of the menu down the screen.
+        if printf '%s\n' "${updatable[@]:-}" "${image_behind[@]:-}" "${remote_behind[@]:-}" \
+           | grep -qx "$name"; then
+          feedback=$(_menu_why_update "$name")
+          continue
+        fi
         if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
           feedback="$name already installed (remove: scripts/loadout remove $name)"
           continue
@@ -450,6 +555,12 @@ _menu_interactive() {
   # Print in manifest order, not toggle order, so the install sequence is stable.
   for name in "${all[@]}"; do
     printf '%s\n' "${chosen[@]:-}" | grep -qx "$name" && printf '%s\n' "$name"
+  done
+  # Update rows leave by the same door, marked: the caller has to tell an
+  # install from an update, and a bare name cannot say which it is.
+  for name in "${updatable[@]:-}"; do
+    [ -n "$name" ] || continue
+    printf '%s\n' "${chosen[@]:-}" | grep -qx "$name" && printf 'update:%s\n' "$name"
   done
   return 0
 }

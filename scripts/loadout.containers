@@ -1,0 +1,12 @@
+# The entries that can also run as a container, and exactly how. A row here is
+# the opt-in: an entry without one is never offered as a container, and the
+# installer never goes near Docker on its behalf.
+#
+# `docker run --name <container> <run> <image>` is the whole install command. It
+# is printed before it runs, and it is also what an update recreates from — so
+# a container carrying anything this row cannot reproduce (a mount, an env the
+# image does not set, a different port binding) is refused rather than
+# recreated. Columns are '|'-delimited; no field may contain a '|'.
+#
+# name    | container | image                               | run
+headroom  | headroom  | ghcr.io/chopratejas/headroom:latest | -d --restart unless-stopped -p 8787:8787

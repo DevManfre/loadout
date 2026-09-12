@@ -41,12 +41,12 @@ all of it. Deselecting one is a deliberate act, taken with its cost already on s
 ```
     #  entry        cost/session           status
  ▸  1 [x] superpowers  ~800                   ready
-    2 [x] caveman      ~2,480 +60/prompt      ready
-    3 [x] graphify     ~340 +48-105/toolcall  ready
-    4 [x] headroom     none                   ready
-    5 [x] impeccable   ~560 +0-475/edit       ready
+    2 [x] graphify     ~340 +48-105/toolcall  ready
+    3 [x] headroom     none                   ready
+    4 [^] caveman      ~2,480 +60/prompt      update: 84cc3c14fa1e → v2.6.0
+    5 [=] impeccable   ~560 +0-475/edit       installed @ v4.3.1
 
-↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=install 5 · q=quit
+↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=apply 3 · q=quit
 ```
 
 `▸` marks the current row: arrows move it, Space toggles it, `d` explains it, and the
@@ -58,6 +58,26 @@ several rows (`1 3`).
 
 A blocked entry stays numbered but cannot be toggled; `d` on its row prints what it is
 missing, why the entry needs it, how to fix it, and what skipping it costs.
+
+One menu answers all three questions about an entry: `[ ]`/`[x]` is not installed,
+`[=]` is installed and current, `[^]` is installed and behind what upstream publishes
+now, with both pins on its row. An update row is selectable but never preselected —
+an update moves something that already works off the pin this catalog measured — and
+Enter applies the installs and the updates in the same pass, printing every pin it is
+about to move and asking once for the set. `d` on an update row prints the three pins
+that decide it: installed, upstream, and the one the catalog priced the entry on.
+
+An entry that runs somewhere this machine cannot reach — headroom behind a proxy, in a
+container or on the Windows host — is priced from the pin its `/health` endpoint
+admits to, so it gets an `[^]` row too. That row is read-only: it names both pins and
+says to update it where it runs, because nothing here can. `scripts/loadout status`
+prints the same pin as `remote 0.27.0`.
+
+The upstream check runs when the menu opens: one `git ls-remote` per plugin, the
+package index per package, every call bounded and all of them at once — about a second
+in total, remembered nowhere. `--offline` (or `LOADOUT_NO_NET=1`) skips it, and so
+does an unreachable upstream: the entry stays a plain `[=]` row rather than claiming to
+be either current or behind.
 
 One dependency the installer can provide for itself: **uv**. An entry missing only
 uv/pipx is not blocked — its row stays selectable and reads `needs uv/pipx
@@ -76,6 +96,7 @@ Claude Code, Docker — stays yours to install.
 | `--scope user\|project\|local` | Install target (default: `user`) |
 | `-y`, `--yes` | Accept every printed cost up front (required with no TTY) |
 | `-n`, `--dry-run` | Print every step and cost, change nothing |
+| `--offline` | Never ask upstream what it publishes — no update rows |
 
 Every command is idempotent. An already-installed plugin, binary or asset is reported
 and skipped, so re-running only fills the gaps.
@@ -83,9 +104,9 @@ and skipped, so re-running only fills the gaps.
 ### Updating
 
 `scripts/loadout update` never upgrades quietly. For every installed entry it prints
-the pin on disk, the pin the catalog measured and what that pin costs, warns you if
-you are already off the measured pin, and states that an update moves to whatever
-upstream publishes now — a pin this catalog has not measured — before it asks. caveman
+the pin on disk, the pin upstream publishes now, the pin the catalog measured and what
+that pin costs, warns you if you are already off the measured pin, and says when the
+pin the update lands on is one this catalog has not measured — before it asks. caveman
 is the entry on record for why that gate exists: the same skill priced at ~780 tokens
 per session on the pin `84cc3c14fa1e` and at ~2,480 on `v2.6.0`, one version apart.
 `--yes` accepts every gate up front.

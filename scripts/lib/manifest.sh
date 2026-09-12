@@ -7,9 +7,11 @@
 : "${LOADOUT_ROOT:?LOADOUT_ROOT must be set before sourcing manifest.sh}"
 LOADOUT_MANIFEST=${LOADOUT_MANIFEST:-$LOADOUT_ROOT/scripts/loadout.manifest}
 LOADOUT_DEPS=${LOADOUT_DEPS:-$LOADOUT_ROOT/scripts/loadout.deps}
+LOADOUT_CONTAINERS=${LOADOUT_CONTAINERS:-$LOADOUT_ROOT/scripts/loadout.containers}
 
 MANIFEST_COLUMNS=8
 DEPS_COLUMNS=7
+CONTAINERS_COLUMNS=4
 
 # Comments and blank lines out, every field trimmed, wrong column counts
 # reported by line so a typo in the data file names itself.
@@ -38,6 +40,7 @@ _table_rows() {
 
 manifest_rows() { _table_rows "$LOADOUT_MANIFEST" "$MANIFEST_COLUMNS"; }
 deps_rows()     { _table_rows "$LOADOUT_DEPS" "$DEPS_COLUMNS"; }
+containers_rows() { _table_rows "$LOADOUT_CONTAINERS" "$CONTAINERS_COLUMNS"; }
 
 manifest_names() { manifest_rows | cut -d'|' -f1; }
 
@@ -49,6 +52,9 @@ _row_field() {
 
 manifest_field() { _row_field "$(manifest_rows)" "$1" "$2"; }
 dep_field()      { _row_field "$(deps_rows)" "$1" "$2"; }
+# Fails when the entry has no row at all, which is how every caller asks
+# "can this entry run as a container" without a second predicate.
+container_field() { _row_field "$(containers_rows)" "$1" "$2"; }
 
 manifest_in_preset() {
   local presets
