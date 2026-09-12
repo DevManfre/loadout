@@ -110,15 +110,19 @@ cmd_status() {
   printf '%-12s %-16s %-10s %-24s %s\n' entry installed measured cost note
   local name installed measured drift gap gaps
   for name in $(manifest_names); do
-    if entry_installed "$name"; then
+    if entry_installed_locally "$name"; then
       installed=$(entry_version "$name")
+    elif entry_installed "$name"; then
+      # A live proxy answering from a container or another host: nothing on
+      # this machine to read a pin from, but "not installed" would be a lie.
+      installed="remote"
     else
       installed="not installed"
     fi
     measured=$(manifest_field "$name" 8)
     drift=""
     case "$installed" in
-      "not installed"|-) ;;
+      "not installed"|remote|-) ;;
       "$measured") ;;
       *) drift="DRIFT" ;;
     esac

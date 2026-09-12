@@ -98,7 +98,11 @@ install_entry() {
     explain_dep "$token" "$name"
   done
 
-  if entry_installed "$name"; then _skip "already installed"; return 0; fi
+  if entry_installed_locally "$name"; then _skip "already installed"; return 0; fi
+  if entry_installed "$name"; then
+    _skip "already running remotely (a live proxy answered) — nothing to install here"
+    return 0
+  fi
   if [ "${SELECTION_CONFIRMED:-0}" -eq 1 ]; then
     :   # the menu priced this set and the user accepted it there
   elif ! confirm "install?"; then
@@ -213,6 +217,10 @@ update_entry() {
 
   say "$name"
   if ! entry_installed "$name"; then _skip "not installed"; return 0; fi
+  if ! entry_installed_locally "$name"; then
+    _skip "runs remotely (container or another host) — update it where it runs"
+    return 0
+  fi
 
   pin_gate "$name" || { _skip "declined"; return 0; }
 
@@ -289,6 +297,10 @@ remove_entry() {
   say "$name"
   note "uninstalling drops it from disk; '/plugin disable $name' only drops it from context"
   if ! entry_installed "$name"; then _skip "not installed"; return 0; fi
+  if ! entry_installed_locally "$name"; then
+    _skip "runs remotely (container or another host) — remove it where it runs"
+    return 0
+  fi
   confirm "uninstall $name?" || { _skip "declined"; return 0; }
 
   case "$kind" in

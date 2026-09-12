@@ -58,8 +58,11 @@ assert_status() {
 # its argv to $STUB_CALLS, so a test can assert that nothing was invoked.
 stub_dir() {
   # Neutralise the developer's own environment: a variable the real proxy sets
-  # would otherwise satisfy a runtime token and hide a broken filter.
+  # would otherwise satisfy a runtime token and hide a broken filter. The same
+  # goes for the Claude settings files the proxy probe falls back to — point
+  # the lookup at nothing so only a test that plants its own file sees one.
   unset ANTHROPIC_BASE_URL
+  export LOADOUT_SETTINGS_FILES=/dev/null
   STUB=$(mktemp -d)
   STUB_CALLS=$STUB/.calls
   : > "$STUB_CALLS"
@@ -283,6 +286,69 @@ EOF
 it "an installed binary is detected on PATH"
 ( stub_dir; stub graphify; assert_status 0 entry_installed graphify )
 
+# The proxy probe: headroom often runs where PATH cannot see it — a container,
+# or the Windows host under WSL — and announces itself only as a live URL in
+# ANTHROPIC_BASE_URL. stub_dir unsets that variable, so every other test keeps
+# seeing the probe as unsatisfied.
+it "a live proxy at ANTHROPIC_BASE_URL counts as installed without the binary"
+( stub_dir; absent headroom; stub curl
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  assert_status 0 entry_installed headroom )
+
+it "a remote-only entry is not installed locally"
+( stub_dir; absent headroom; stub curl
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  assert_status 1 entry_installed_locally headroom )
+
+it "a dead proxy URL does not count as installed"
+( stub_dir; absent headroom; stub curl 7
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  assert_status 1 entry_installed headroom )
+
+it "the proxy probe needs the variable set, reachable or not"
+( stub_dir; absent headroom; stub curl
+  assert_status 1 entry_installed headroom )
+
+it "the proxy URL is found in Claude settings when the shell lacks the variable"
+( stub_dir; absent headroom; stub curl
+  printf '{ "env": { "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787" } }\n' > "$STUB/settings.json"
+  export LOADOUT_SETTINGS_FILES="$STUB/settings.json"
+  assert_status 0 entry_installed headroom )
+
+it "the settings fallback still needs a live proxy"
+( stub_dir; absent headroom; stub curl 7
+  printf '{ "env": { "ANTHROPIC_BASE_URL": "http://127.0.0.1:8787" } }\n' > "$STUB/settings.json"
+  export LOADOUT_SETTINGS_FILES="$STUB/settings.json"
+  assert_status 1 entry_installed headroom )
+
+it "the first settings file naming the variable wins"
+( stub_dir; absent headroom; stub curl
+  printf '{ "env": { "ANTHROPIC_BASE_URL": "http://127.0.0.1:1111/project" } }\n' > "$STUB/local.json"
+  printf '{ "env": { "ANTHROPIC_BASE_URL": "http://127.0.0.1:2222/global" } }\n' > "$STUB/global.json"
+  export LOADOUT_SETTINGS_FILES="$STUB/local.json:$STUB/global.json"
+  entry_installed headroom
+  assert_contains "127.0.0.1:1111/project" "$(cat "$STUB_CALLS")" )
+
+it "the proxy probe fails closed without curl"
+( stub_dir; absent headroom,curl
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  assert_status 1 entry_installed headroom )
+
+it "the binary still wins over the proxy for the version"
+( stub_dir; stub curl
+  cat > "$STUB/headroom" <<'EOF'
+#!/usr/bin/env bash
+echo "headroom 0.27.0"
+EOF
+  chmod +x "$STUB/headroom"
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  assert_eq "0.27.0" "$(entry_version headroom)" )
+
+it "a remote-only entry reports no local pin"
+( stub_dir; absent headroom; stub curl
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  assert_eq "-" "$(entry_version headroom)" )
+
 it "list prints every entry with its cost"
 out=$(scripts/loadout list)
 assert_contains "headroom" "$out"
@@ -325,6 +391,27 @@ it "status never reports DRIFT for an entry that is not installed"
 it "the absent seam reaches entry_installed's binary probe"
 ( stub_dir; stub graphify; absent graphify
   assert_status 1 entry_installed graphify )
+
+it "status shows remote for a reachable proxy with no local install"
+( stub_dir; absent headroom,graphify; stub claude; stub curl
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  out=$(HOME=$(mktemp -d) scripts/loadout status 2>&1)
+  assert_contains "remote" "$out"
+  assert_eq "" "$(printf '%s' "$out" | grep DRIFT)" )
+
+it "update leaves a remote-only entry alone"
+( stub_dir; absent headroom; stub claude; stub git; stub uv; stub curl
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  out=$(HOME=$(mktemp -d) scripts/loadout update --only headroom --yes 2>&1)
+  assert_contains "runs remotely" "$out"
+  assert_eq "" "$(grep upgrade "$STUB_CALLS")" )
+
+it "remove leaves a remote-only entry alone"
+( stub_dir; absent headroom; stub claude; stub git; stub uv; stub curl
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  out=$(HOME=$(mktemp -d) scripts/loadout remove headroom --yes 2>&1)
+  assert_contains "runs remotely" "$out"
+  assert_eq "" "$(grep uninstall "$STUB_CALLS")" )
 
 it "status names every runtime gap, not just the last"
 ( stub_dir; stub demo
@@ -374,6 +461,18 @@ it "an already-installed entry is not selected again"
 ( stub_dir; stub claude; stub git; stub uv; stub graphify
   OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
   assert_eq "" "$(resolve_selection | grep -x graphify)" )
+
+it "a remote-only entry is not selected for install"
+( stub_dir; stub claude; stub git; stub uv; stub curl; absent headroom
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
+  assert_eq "" "$(resolve_selection | grep -x headroom)" )
+
+it "the menu shows a remote-only entry as running remotely"
+( stub_dir; stub claude; stub git; stub uv; stub curl; absent headroom
+  export ANTHROPIC_BASE_URL=http://127.0.0.1:8787
+  out=$(printf 'q\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "running remotely" "$out" )
 
 it "the menu obeys a toggle then Enter"
 ( stub_dir; stub claude; stub git; stub uv; absent graphify

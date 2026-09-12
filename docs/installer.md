@@ -21,7 +21,7 @@ One row per installable entry.
 | `source` | Marketplace name, or `name=owner/repo` when the marketplace needs adding; the package name for a `pypkg` |
 | `presets` | Comma-separated presets this entry belongs to (`core`, `full`) |
 | `needs` | Comma-separated dependency tokens, matched against `scripts/loadout.deps` |
-| `probe` | How to detect an install: `plugin:<name>` or `bin:<command>` |
+| `probe` | How to detect an install: `plugin:<name>`, `bin:<command>`, or `proxy:<VAR>` — a live HTTP answer at the URL the variable names, for a process serving this machine from somewhere PATH cannot see (a container, the Windows host under WSL). When the variable is not in the environment — it usually lives in Claude Code's settings, not the shell profile — the probe reads it from `.claude/settings.local.json`, `.claude/settings.json`, then `~/.claude/settings.json`. Comma-separated alternatives; any one satisfied counts as installed. `update` and `remove` act only when a non-`proxy:` probe matches — a remote process is managed where it runs |
 | `cost_session` | The always-on token figure — must match, digit for digit, what the README catalog row leads with, in every language. `scripts/validate.sh` enforces this |
 | `measured` | The pin (plugin version, package version) the `cost_session` figure was measured on |
 

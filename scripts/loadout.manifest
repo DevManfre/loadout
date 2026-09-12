@@ -6,4 +6,4 @@
 superpowers | plugin | claude-plugins-official       | core,full | claude,git          | plugin:superpowers | ~800                  | 6.3.0
 caveman     | plugin | caveman=JuliusBrussee/caveman | full      | claude,git          | plugin:caveman     | ~2,480 +60/prompt     | v2.6.0
 graphify    | pypkg  | graphifyy                     | core,full | uv/pipx             | bin:graphify       | ~340 +48-105/toolcall | 0.9.56
-headroom    | pypkg  | headroom-ai[proxy]            | full      | uv/pipx,py313,docker,anthropic_base_url | bin:headroom | none | v0.37.0
+headroom    | pypkg  | headroom-ai[proxy]            | full      | uv/pipx,py313,docker,anthropic_base_url | bin:headroom,proxy:ANTHROPIC_BASE_URL | none | v0.37.0

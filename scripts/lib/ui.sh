@@ -179,7 +179,11 @@ _menu_prepare() {
     row_cost[idx]=$(manifest_field "$name" 7)
     if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
       row_mark[idx]="="
-      row_status[idx]="installed$(_menu_installed_ver "$name")"
+      if entry_installed_locally "$name"; then
+        row_status[idx]="installed$(_menu_installed_ver "$name")"
+      else
+        row_status[idx]="running remotely (proxy reachable, nothing on PATH here)"
+      fi
     elif printf '%s\n' "${blocked[@]:-}" | grep -qx "$name"; then
       row_mark[idx]="!"
       row_status[idx]="BLOCKED: needs $(entry_deps "$name" block | tr '\n' ' ' | sed 's/ *$//')"
