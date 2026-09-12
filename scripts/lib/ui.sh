@@ -317,7 +317,7 @@ _menu_plain() {
   _menu_prepare
 
   while :; do
-    printf '\n  #  entry        cost/session           status\n' >&2
+    printf '\n  #  entry           cost/session           status\n' >&2
     # Installed and blocked rows are numbered too, continuing after the
     # selectable ones: the prompt offers `d <n>` for them, and an unnumbered
     # row is an instruction the user cannot follow.
@@ -330,7 +330,7 @@ _menu_plain() {
       if [ "$mark" = " " ] || [ "$mark" = "^" ]; then
         if printf '%s\n' "${chosen[@]:-}" | grep -qx "$name"; then mark="x"; fi
       fi
-      printf '  %d [%s] %-12s %-22s %s\n' \
+      printf '  %d [%s] %-15s %-22s %s\n' \
         "$i" "$mark" "$name" "${row_cost[$idx]}" "${row_status[$idx]}" >&2
     done
     [ -z "$own_line" ] || printf '\n  %s\n' "$own_line" >&2
@@ -448,7 +448,7 @@ _menu_interactive() {
     frame_buf=""
 
     _menu_ln ""
-    _menu_ln "    #  entry        cost/session           status"
+    _menu_ln "    #  entry           cost/session           status"
     for idx in "${!rows[@]}"; do
       name=${rows[$idx]}
       i=$((idx + 1))
@@ -464,7 +464,7 @@ _menu_interactive() {
           esac
           if printf '%s\n' "${chosen[@]:-}" | grep -qx "$name"; then mark="x"; fi ;;
       esac
-      printf -v line '%d [%s] %-12s %-22s' "$i" "$mark" "$name" "${row_cost[$idx]}"
+      printf -v line '%d [%s] %-15s %-22s' "$i" "$mark" "$name" "${row_cost[$idx]}"
       line=${line/\[x\]/[${C_GREEN}x${C_RESET}]}
       line=${line/\[=\]/[${C_DIM}=${C_RESET}]}
       line=${line/\[!\]/[${C_RED}!${C_RESET}]}

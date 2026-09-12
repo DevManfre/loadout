@@ -39,14 +39,15 @@ the block above never has to change. Every command lives under that one entrypoi
 all of it. Deselecting one is a deliberate act, taken with its cost already on screen:
 
 ```
-    #  entry        cost/session           status
- ▸  1 [x] superpowers  ~800                   ready
-    2 [x] graphify     ~340 +48-105/toolcall  ready
-    3 [x] headroom     none                   ready
-    4 [^] caveman      ~2,480 +60/prompt      update: 84cc3c14fa1e → v2.6.0
-    5 [=] impeccable   ~560 +0-475/edit       installed @ v4.3.1
+    #  entry           cost/session           status
+ ▸  1 [x] superpowers     ~800                   ready
+    2 [x] graphify        ~340 +48-105/toolcall  ready
+    3 [x] headroom        none                   ready
+    4 [x] frontend-design ~70                    ready
+    5 [^] caveman         ~2,480 +60/prompt      update: 84cc3c14fa1e → v2.6.0
+    6 [=] impeccable      ~560 +0-475/edit       installed @ v4.3.1
 
-↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=apply 3 · q=quit
+↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=apply 4 · q=quit
 ```
 
 `▸` marks the current row: arrows move it, Space toggles it, `d` explains it, and the
@@ -149,6 +150,7 @@ than it saves does not belong in a loadout, however good it looks in its own REA
 | caveman | Style plugin: drops articles, filler and hedging from the agent's prose, keeping code, paths and errors exact | Upstream measures output falling 1,214 → 294 tokens on 10 tasks (65%). It only shrinks output, so it pays off on explanatory sessions and loses on tool-call-heavy ones — the arithmetic is in the guide | ~2,480 tokens per session start, `/clear` and compaction, plus ~60 per user prompt | [guide](integrations/caveman/README.md) |
 | headroom | Compression proxy on the wire: shrinks tool output, logs, search results and history before they reach the API, leaving a hash to expand on demand | The only entry that costs no context at all — it is not in the window. Measured on this machine: 3.0% off a 66 M-token session, 4.42% off 6.86 B lifetime tokens ($1,339). Paid for in latency, ~2.2 s added per request | none in the proxy shape; ~525 tokens if you add its MCP server | [guide](integrations/headroom/README.md) |
 | impeccable | Design-fluency plugin: 23 named design commands, plus a compiled detector that flags gradient text, zero-offset glows, contrast failures and design-system drift after every edit | Mechanical, checkable findings at the moment of the edit instead of at review time, so a component is not rebuilt after a human calls it AI-made. The only hook-bearing entry here with no `SessionStart` cost | ~560 tokens per session, plus 0 on non-UI edits, ~70 on a clean UI file and ~475 on one with three findings | [guide](integrations/impeccable/README.md) |
+| frontend-design | Anthropic's own frontend taste file: one skill that argues for a design plan grounded in the subject matter, and names the five visual clusters generated pages keep landing on — including the terracotta-on-cream palette that is Claude's own accent | A first pass that does not read as templated, so the page is not rebuilt from palette up after review calls it AI-made. No hooks, no agents, no binary: the body loads only on UI work | ~70 tokens per session; ~2,350-token body loads only on invocation | [guide](integrations/frontend-design/README.md) |
 
 ### Own assets
 

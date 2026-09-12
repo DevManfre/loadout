@@ -8,3 +8,4 @@ caveman     | plugin | caveman=JuliusBrussee/caveman | full      | claude,git   
 graphify    | pypkg  | graphifyy                     | core,full | uv/pipx             | bin:graphify       | ~340 +48-105/toolcall | 0.9.56
 headroom    | pypkg  | headroom-ai[proxy]            | full      | uv/pipx,py313,docker,anthropic_base_url | bin:headroom,proxy:ANTHROPIC_BASE_URL,container:headroom | none | v0.37.0
 impeccable  | plugin | impeccable=pbakaus/impeccable | full      | claude,git,curl/wget | plugin:impeccable  | ~560 +0-475/edit      | v4.3.1
+frontend-design | plugin | claude-plugins-official       | full      | claude,git          | plugin:frontend-design | ~70                   | 3deb821cb71c
