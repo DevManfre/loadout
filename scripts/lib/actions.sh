@@ -109,7 +109,7 @@ install_entry() {
     plugin)
       install_marketplace "$name"
       if run claude plugin install "$name@$(plugin_marketplace "$name")" \
-           --scope "$OPT_SCOPE" --yes; then _ok
+           --scope "$OPT_SCOPE" --yes; then plugin_list_reset; _ok
       else _fail "claude plugin install $name failed"; fi ;;
     pypkg)
       # A failed package install must not fall through: _post_install_pypkg
@@ -220,7 +220,7 @@ update_entry() {
     plugin)
       run claude plugin marketplace update "$(plugin_marketplace "$name")" \
         || _fail "marketplace update failed"
-      if run claude plugin update "$name"; then _ok
+      if run claude plugin update "$name"; then plugin_list_reset; _ok
       else _fail "claude plugin update $name failed"; fi
       note "a plugin update needs a restart of the agent to take effect" ;;
     pypkg)
@@ -293,7 +293,7 @@ remove_entry() {
 
   case "$kind" in
     plugin)
-      if run claude plugin uninstall "$name"; then _ok
+      if run claude plugin uninstall "$name"; then plugin_list_reset; _ok
       else _fail "claude plugin uninstall $name failed"; fi ;;
     pypkg)
       # Same shape as install_entry and update_entry: a failed command must not

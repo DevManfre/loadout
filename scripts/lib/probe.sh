@@ -90,6 +90,21 @@ plugin_marketplace() {
   printf '%s' "${source%%=*}"
 }
 
+# `claude plugin list` costs around a second per call (a node CLI), and one
+# menu open asks about every plugin more than once. The answer changes only
+# when this process itself installs or removes a plugin, so those code paths
+# call plugin_list_reset; nothing is ever written to disk.
+_PLUGIN_LIST_LOADED=0
+_PLUGIN_LIST=""
+_plugin_list() {
+  if [ "$_PLUGIN_LIST_LOADED" -eq 0 ]; then
+    _PLUGIN_LIST=$(claude plugin list --json 2>/dev/null)
+    _PLUGIN_LIST_LOADED=1
+  fi
+  printf '%s' "$_PLUGIN_LIST"
+}
+plugin_list_reset() { _PLUGIN_LIST_LOADED=0; _PLUGIN_LIST=""; }
+
 # Install state is probed, never remembered: a state file would rot the first
 # time somebody uninstalled something by hand.
 entry_installed() {
@@ -97,7 +112,7 @@ entry_installed() {
   probe=$(manifest_field "$1" 6) || return 1
   case "$probe" in
     plugin:*)
-      claude plugin list --json 2>/dev/null | grep -Fq "\"${probe#plugin:}@" ;;
+      _plugin_list | grep -Fq "\"${probe#plugin:}@" ;;
     bin:*)
       have_cmd "${probe#bin:}" ;;
     *) return 1 ;;
