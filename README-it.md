@@ -46,10 +46,11 @@ tutte. Deselezionarne una è un atto deliberato, preso con il suo costo già a s
     2 [x] graphify        ~340 +48-105/toolcall  ready
     3 [x] headroom        none                   ready
     4 [x] frontend-design ~70                    ready
-    5 [^] caveman         ~2,480 +60/prompt      update: 84cc3c14fa1e → v2.6.0
-    6 [=] impeccable      ~560 +0-475/edit       installed @ v4.3.1
+    5 [x] ui-ux-pro-max   ~683                   ready
+    6 [^] caveman         ~2,480 +60/prompt      update: 84cc3c14fa1e → v2.6.0
+    7 [=] impeccable      ~560 +0-475/edit       installed @ v4.3.1
 
-↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=apply 4 · q=quit
+↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=apply 5 · q=quit
 ```
 
 `▸` indica la riga corrente: le frecce la spostano, Space la toggla, `d` la spiega, e
@@ -159,6 +160,7 @@ README.
 | headroom | Proxy di compressione sul filo: riduce output dei tool, log, risultati di ricerca e cronologia prima che raggiungano le API, lasciando un hash da espandere a richiesta | L'unica voce che non costa contesto — non sta nella finestra. Misurato su questa macchina: 3,0% su una sessione da 66 M token, 4,42% su 6,86 B token complessivi (1.339 $). Si paga in latenza, ~2,2 s in più per richiesta | nessuno nella forma proxy; ~525 token se aggiungi il suo server MCP | [guida](integrations/headroom/README-it.md) |
 | impeccable | Plugin di fluenza progettuale: 23 comandi di design con nome, più un detector compilato che segnala testo in gradiente, aloni a offset zero, contrasti insufficienti e deriva dal design system dopo ogni modifica | Finding meccanici e verificabili al momento della modifica invece che in fase di review, così un componente non viene rifatto dopo che un umano lo ha definito fatto dall'AI. L'unica voce con hook di questo catalogo senza costo su `SessionStart` | ~560 token per sessione, più 0 sulle modifiche non-UI, ~70 su un file UI pulito e ~475 su uno con tre finding | [guida](integrations/impeccable/README-it.md) |
 | frontend-design | Il file di gusto frontend di Anthropic: una skill sola che argomenta per un piano di design radicato nella materia del brief, e nomina i cinque grappoli visivi su cui le pagine generate continuano ad atterrare — compresa la palette terracotta su crema che è l'accento di Claude | Un primo passaggio che non sa di template, così la pagina non viene rifatta dalla palette in su dopo che la review la definisce fatta dall'AI. Niente hook, niente agent, nessun binario: il corpo si carica solo sul lavoro di UI | ~70 token per sessione; corpo da ~2.350 token caricato solo all'invocazione | [guida](integrations/frontend-design/README-it.md) |
+| ui-ux-pro-max | Database di design locale interrogato da uno script: 79 stili, 192 palette con profili di ragionamento, 74 abbinamenti di font, 119 linee guida UX, 25 tipi di grafico, 22 stack — 3,1 MB di CSV e JSON che non entrano mai nel contesto | Valori precisi invece che improvvisati — questa palette, questo abbinamento, questo pattern — per ~105 token a query mirata, così la pagina non viene rifatta quando la direzione si rivela sbagliata. Niente hook, e il database resta fuori dalla finestra | ~683 token per sessione, il più alto qui: il plugin espone sette skill e non esiste un interruttore per singola skill | [guida](integrations/ui-ux-pro-max/README-it.md) |
 
 ### Asset propri
 
