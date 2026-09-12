@@ -113,7 +113,7 @@ PY
 . scripts/lib/manifest.sh
 
 it "manifest lists every entry"
-assert_eq "superpowers caveman graphify headroom" "$(manifest_names | tr '\n' ' ' | sed 's/ $//')"
+assert_eq "superpowers caveman graphify headroom impeccable" "$(manifest_names | tr '\n' ' ' | sed 's/ $//')"
 
 it "manifest keeps spaces inside a field"
 assert_contains "+60/prompt" "$(manifest_field caveman 7)"
@@ -430,7 +430,7 @@ it "the default preset is everything installable"
 ( stub_dir; stub claude; stub git; stub uv; absent graphify
   OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT="" LOADOUT_FAKE_PLATFORM=Linux/x86_64
   export OPT_PRESET OPT_ONLY OPT_EXCEPT LOADOUT_FAKE_PLATFORM
-  assert_eq "superpowers caveman graphify headroom" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
+  assert_eq "superpowers caveman graphify headroom impeccable" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
 
 it "core drops the style plugin and the proxy"
 ( stub_dir; stub claude; stub git; stub uv; absent graphify
@@ -455,7 +455,7 @@ it "a hard-blocked entry is never selected"
 it "an auto-fixable block does not exclude an entry"
 ( stub_dir; absent uv,pipx,graphify,headroom; stub claude; stub git
   OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
-  assert_eq "superpowers caveman graphify headroom" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
+  assert_eq "superpowers caveman graphify headroom impeccable" "$(resolve_selection | tr '\n' ' ' | sed 's/ $//')" )
 
 it "an already-installed entry is not selected again"
 ( stub_dir; stub claude; stub git; stub uv; stub graphify
@@ -477,7 +477,7 @@ it "the menu shows a remote-only entry as running remotely"
 it "the menu obeys a toggle then Enter"
 ( stub_dir; stub claude; stub git; stub uv; absent graphify
   OPT_PRESET=full OPT_ONLY="" OPT_EXCEPT=""
-  assert_eq "superpowers graphify headroom" \
+  assert_eq "superpowers graphify headroom impeccable" \
     "$(printf '2\n\n' | menu_select $(resolve_selection) | tr '\n' ' ' | sed 's/ $//')" )
 
 it "the menu can clear and rebuild a selection"
@@ -523,7 +523,7 @@ it "row numbers stay correct when nothing is selectable"
 it "the prompt counts every visible row"
 ( stub_dir; absent claude,git,graphify,headroom; stub uv
   out=$(printf '\n' | menu_select 2>&1 >/dev/null)
-  assert_contains "toggle 1-2" "$out" )
+  assert_contains "toggle 1-3" "$out" )
 
 it "an installed entry shows in the menu as an unselectable row"
 ( stub_dir; stub claude; stub git; stub uv; stub graphify; absent headroom,docker
@@ -560,7 +560,7 @@ it "a fresh own-asset copy prints its name"
 
 it "the plain menu toggles several rows in one reply"
 ( stub_dir; stub claude; stub git; stub uv; absent graphify,headroom
-  assert_eq "superpowers headroom" \
+  assert_eq "superpowers headroom impeccable" \
     "$(printf '2 3\n\n' | menu_select $(resolve_selection) | tr '\n' ' ' | sed 's/ $//')" )
 
 # A pipe reaches _menu_plain above; a pty reaches _menu_interactive below.
@@ -587,7 +587,7 @@ it "d explains the current row in the interactive menu"
 
 it "the interactive menu shows an installed row and refuses to toggle it"
 ( stub_dir; stub claude; stub git; stub uv; stub graphify; absent headroom,docker
-  out=$(HOME=$(mktemp -d) run_with_pty $'4q' scripts/loadout install)
+  out=$(HOME=$(mktemp -d) run_with_pty $'5q' scripts/loadout install)
   assert_contains "[=] graphify" "$out"
   assert_contains "already installed" "$out" )
 

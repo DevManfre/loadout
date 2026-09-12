@@ -44,8 +44,9 @@ all of it. Deselecting one is a deliberate act, taken with its cost already on s
     2 [x] caveman      ~2,480 +60/prompt      ready
     3 [x] graphify     ~340 +48-105/toolcall  ready
     4 [x] headroom     none                   ready
+    5 [x] impeccable   ~560 +0-475/edit       ready
 
-↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=install 4 · q=quit
+↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=install 5 · q=quit
 ```
 
 `▸` marks the current row: arrows move it, Space toggles it, `d` explains it, and the
@@ -126,6 +127,7 @@ than it saves does not belong in a loadout, however good it looks in its own REA
 | graphify | Local tree-sitter code graph: `explain` a symbol, trace a `path` between two, query the graph instead of grepping | One `explain` answers what would otherwise cost a grep sweep plus a few full file reads, and `graphify explain` / `graphify path` run as plain shell commands — zero skill body loaded. Graph builds locally, 0 LLM credits on code | ~340 tokens per session, plus ~48–105 per read or grep while a graph exists | [guide](integrations/graphify/README.md) |
 | caveman | Style plugin: drops articles, filler and hedging from the agent's prose, keeping code, paths and errors exact | Upstream measures output falling 1,214 → 294 tokens on 10 tasks (65%). It only shrinks output, so it pays off on explanatory sessions and loses on tool-call-heavy ones — the arithmetic is in the guide | ~2,480 tokens per session start, `/clear` and compaction, plus ~60 per user prompt | [guide](integrations/caveman/README.md) |
 | headroom | Compression proxy on the wire: shrinks tool output, logs, search results and history before they reach the API, leaving a hash to expand on demand | The only entry that costs no context at all — it is not in the window. Measured on this machine: 3.0% off a 66 M-token session, 4.42% off 6.86 B lifetime tokens ($1,339). Paid for in latency, ~2.2 s added per request | none in the proxy shape; ~525 tokens if you add its MCP server | [guide](integrations/headroom/README.md) |
+| impeccable | Design-fluency plugin: 23 named design commands, plus a compiled detector that flags gradient text, zero-offset glows, contrast failures and design-system drift after every edit | Mechanical, checkable findings at the moment of the edit instead of at review time, so a component is not rebuilt after a human calls it AI-made. The only hook-bearing entry here with no `SessionStart` cost | ~560 tokens per session, plus 0 on non-UI edits, ~70 on a clean UI file and ~475 on one with three findings | [guide](integrations/impeccable/README.md) |
 
 ### Own assets
 

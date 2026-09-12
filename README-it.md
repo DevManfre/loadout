@@ -46,8 +46,9 @@ tutte. Deselezionarne una è un atto deliberato, preso con il suo costo già a s
     2 [x] caveman      ~2,480 +60/prompt      ready
     3 [x] graphify     ~340 +48-105/toolcall  ready
     4 [x] headroom     none                   ready
+    5 [x] impeccable   ~560 +0-475/edit       ready
 
-↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=install 4 · q=quit
+↑/↓ move · Space toggle · d=why · a=all · n=none · Enter=install 5 · q=quit
 ```
 
 `▸` indica la riga corrente: le frecce la spostano, Space la toggla, `d` la spiega, e
@@ -131,6 +132,7 @@ README.
 | graphify | Grafo di codice locale via tree-sitter: `explain` di un simbolo, `path` tra due, interrogazione del grafo invece del grep | Un `explain` risponde a quello che altrimenti costa una spazzata di grep più qualche lettura di file intero, e `graphify explain` / `graphify path` girano come normali comandi di shell — nessun corpo di skill caricato. Il grafo si costruisce in locale, 0 crediti LLM sul codice | ~340 token per sessione, più ~48–105 per lettura o grep finché esiste un grafo | [guida](integrations/graphify/README-it.md) |
 | caveman | Plugin di stile: toglie articoli, riempitivi e giri di parole dalla prosa dell'agente, lasciando esatti codice, percorsi ed errori | L'upstream misura l'output che scende da 1.214 a 294 token su 10 task (65%). Riduce solo l'output, quindi rende nelle sessioni discorsive e perde in quelle piene di tool call — l'aritmetica è nella guida | ~2.480 token per avvio sessione, `/clear` e compaction, più ~60 per prompt utente | [guida](integrations/caveman/README-it.md) |
 | headroom | Proxy di compressione sul filo: riduce output dei tool, log, risultati di ricerca e cronologia prima che raggiungano le API, lasciando un hash da espandere a richiesta | L'unica voce che non costa contesto — non sta nella finestra. Misurato su questa macchina: 3,0% su una sessione da 66 M token, 4,42% su 6,86 B token complessivi (1.339 $). Si paga in latenza, ~2,2 s in più per richiesta | nessuno nella forma proxy; ~525 token se aggiungi il suo server MCP | [guida](integrations/headroom/README-it.md) |
+| impeccable | Plugin di fluenza progettuale: 23 comandi di design con nome, più un detector compilato che segnala testo in gradiente, aloni a offset zero, contrasti insufficienti e deriva dal design system dopo ogni modifica | Finding meccanici e verificabili al momento della modifica invece che in fase di review, così un componente non viene rifatto dopo che un umano lo ha definito fatto dall'AI. L'unica voce con hook di questo catalogo senza costo su `SessionStart` | ~560 token per sessione, più 0 sulle modifiche non-UI, ~70 su un file UI pulito e ~475 su uno con tre finding | [guida](integrations/impeccable/README-it.md) |
 
 ### Asset propri
 
