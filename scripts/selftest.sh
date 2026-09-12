@@ -416,15 +416,48 @@ it "a blocked row cannot be toggled on"
   assert_eq "" "$(printf '%s' "$out" | grep -x superpowers)" )
 
 it "row numbers stay correct when nothing is selectable"
-( stub_dir; absent claude,git; stub uv
+( stub_dir; absent claude,git,graphify,headroom; stub uv
   out=$(printf 'd 2\n\n' | menu_select 2>&1 >/dev/null)
   assert_contains "caveman" "$out"
   assert_eq "" "$(printf '%s' "$out" | grep 'skip superpowers')" )
 
 it "the prompt counts every visible row"
-( stub_dir; absent claude,git; stub uv
+( stub_dir; absent claude,git,graphify,headroom; stub uv
   out=$(printf '\n' | menu_select 2>&1 >/dev/null)
   assert_contains "toggle 1-2" "$out" )
+
+it "an installed entry shows in the menu as an unselectable row"
+( stub_dir; stub claude; stub git; stub uv; stub graphify; absent headroom,docker
+  OPT_PRESET=full OPT_ONLY="graphify,superpowers" OPT_EXCEPT=""
+  out=$(printf 'q\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "[=] graphify" "$out"
+  assert_contains "installed" "$out" )
+
+it "an installed row cannot be toggled on"
+( stub_dir; stub claude; stub git; stub uv; stub graphify; absent headroom,docker
+  OPT_PRESET=full OPT_ONLY="graphify,superpowers" OPT_EXCEPT=""
+  out=$(printf '2\n\n' | menu_select $(resolve_selection) 2>/dev/null)
+  err=$(printf '2\n\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_eq "" "$(printf '%s' "$out" | grep -x graphify)"
+  assert_contains "already installed" "$err" )
+
+it "d on an installed row says so instead of ready"
+( stub_dir; stub claude; stub git; stub uv; stub graphify; absent headroom,docker
+  OPT_PRESET=full OPT_ONLY="graphify,superpowers" OPT_EXCEPT=""
+  out=$(printf 'd 2\n\n' | menu_select $(resolve_selection) 2>&1 >/dev/null)
+  assert_contains "already installed" "$out" )
+
+it "the menu names loadout's own assets"
+( stub_dir; absent claude,git,graphify,headroom; stub uv
+  out=$(printf 'q\n' | menu_select 2>&1 >/dev/null)
+  assert_contains "loadout's own" "$out"
+  assert_contains "token-economy" "$out" )
+
+it "a fresh own-asset copy prints its name"
+( stub_dir; stub claude
+  out=$(HOME=$(mktemp -d) scripts/loadout install \
+        --only superpowers --except superpowers --yes 2>&1)
+  assert_contains "installed token-economy" "$out" )
 
 it "the plain menu toggles several rows in one reply"
 ( stub_dir; stub claude; stub git; stub uv; absent graphify,headroom
@@ -452,6 +485,12 @@ it "d explains the current row in the interactive menu"
   out=$(HOME=$(mktemp -d) run_with_pty $'dq' scripts/loadout install)
   assert_contains "nothing is blocking it" "$out"
   assert_contains "cancelled" "$out" )
+
+it "the interactive menu shows an installed row and refuses to toggle it"
+( stub_dir; stub claude; stub git; stub uv; stub graphify; absent headroom,docker
+  out=$(HOME=$(mktemp -d) run_with_pty $'4q' scripts/loadout install)
+  assert_contains "[=] graphify" "$out"
+  assert_contains "already installed" "$out" )
 
 it "LOADOUT_PLAIN_MENU forces the line-based menu on a TTY"
 ( stub_dir; stub claude; stub git; stub uv; absent graphify,headroom

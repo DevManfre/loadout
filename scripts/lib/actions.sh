@@ -162,6 +162,10 @@ copy_own_assets() {
     run mkdir -p "$dest" || { _fail "could not create $dest"; continue; }
     if run cp -R "${src%/}" "$dest/"; then
       _record_asset "$base" "$src"
+      # A fresh copy must say its name: skips already print theirs, and an
+      # asset installed in silence reads as "not carried". Dry run stays
+      # quiet — run() already printed the cp and nothing actually landed.
+      [ "${OPT_DRY_RUN:-0}" -eq 1 ] || note "installed $base -> $dest/$base"
       _ok
     else
       _fail "could not copy $src into $dest"

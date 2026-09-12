@@ -113,6 +113,14 @@ _menu_count() {
   printf '%s' "$c"
 }
 
+# ' @ <pin>' when the installed entry will say its version, nothing when not.
+_menu_installed_ver() {
+  local pin
+  pin=$(entry_version "$1")
+  [ "$pin" = "-" ] || printf ' @ %s' "$pin"
+  return 0
+}
+
 # The status column for a selectable row.
 _menu_status() {
   local soft
@@ -122,12 +130,77 @@ _menu_status() {
   fi
 }
 
+# Loadout's own assets never get a manifest row (they install by plain copy,
+# with no upstream or pin to probe — see copy_own_assets), but an entry the
+# menu never names reads as "not carried". One summary line covers them.
+# Same globs as copy_own_assets; both run from LOADOUT_ROOT.
+_menu_own_assets() {
+  local src base names=""
+  for src in skills/*/ agents/*.md workflows/*.md; do
+    [ -e "$src" ] || continue
+    case "$src" in */.gitkeep) continue ;; esac
+    base=$(basename "${src%/}")
+    names="${names:+$names, }${base%.md}"
+  done
+  [ -n "$names" ] || return 0
+  printf "plus loadout's own, copied with any install: %s" "$names"
+}
+
+# Everything on a row that cannot change while the menu is open — install
+# state, version, cost, dependency status — is priced once here, before the
+# redraw loop. Probing per frame is what made the menu lag: entry_version
+# shells out to the plugin CLI, and every keystroke paid that again for every
+# installed row. Fills the caller's locals (dynamic scoping): installed,
+# blocked, rows, row_mark, row_cost, row_status, own_line.
+_menu_prepare() {
+  local name idx
+  # Installed and blocked entries are shown but cannot be chosen; that is the
+  # whole point of showing them — the menu is the installer's whole view of
+  # the catalog, and an invisible entry reads as "not carried" rather than
+  # "already done". Only unfixable blocks land in blocked — an entry whose
+  # blocks the installer can fix itself is selectable and says so on its row.
+  installed=() blocked=()
+  for name in $(manifest_names); do
+    if entry_installed "$name"; then installed+=("$name")
+    elif [ -n "$(entry_hard_blocks "$name")" ]; then blocked+=("$name")
+    fi
+  done
+  # One array, in display order: selectable rows first, installed then
+  # blocked rows after. Built with explicit appends because "${arr[@]:-}"
+  # on an empty array expands to a single empty argument, which would
+  # shift every row number.
+  rows=()
+  for name in "${all[@]:-}";       do [ -n "$name" ] && rows+=("$name"); done
+  for name in "${installed[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
+  for name in "${blocked[@]:-}";   do [ -n "$name" ] && rows+=("$name"); done
+  row_mark=() row_cost=() row_status=()
+  for idx in "${!rows[@]}"; do
+    name=${rows[$idx]}
+    row_cost[idx]=$(manifest_field "$name" 7)
+    if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
+      row_mark[idx]="="
+      row_status[idx]="installed$(_menu_installed_ver "$name")"
+    elif printf '%s\n' "${blocked[@]:-}" | grep -qx "$name"; then
+      row_mark[idx]="!"
+      row_status[idx]="BLOCKED: needs $(entry_deps "$name" block | tr '\n' ' ' | sed 's/ *$//')"
+    else
+      row_mark[idx]=" "
+      row_status[idx]=$(_menu_status "$name")
+    fi
+  done
+  own_line=$(_menu_own_assets) || own_line=""
+}
+
 # Toggle rows[idx] in the caller's selection. Relies on bash dynamic scoping:
-# rows, blocked, chosen and feedback are the caller's locals.
+# rows, installed, blocked, chosen and feedback are the caller's locals.
 _menu_toggle() {
   local idx=$1 name t
   name=${rows[$idx]:-}
   [ -n "$name" ] || { feedback="no row $((idx + 1))"; return 0; }
+  if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
+    feedback="$name already installed (remove: scripts/loadout remove $name)"
+    return 0
+  fi
   if printf '%s\n' "${blocked[@]:-}" | grep -qx "$name"; then
     feedback="$name is blocked (missing: $(entry_deps "$name" block | tr '\n' ' ' | sed 's/ *$//'))"
     return 0
@@ -147,46 +220,28 @@ _menu_toggle() {
 # cursor movement: this has to work under a pipe and on any terminal.
 _menu_plain() {
   local -a all=("$@") chosen=() rows=()
-  local i name reply idx token soft status feedback=""
+  local -a installed=() blocked=() row_mark=() row_cost=() row_status=()
+  local i name reply idx token mark feedback="" own_line=""
   for name in "${all[@]}"; do chosen+=("$name"); done
 
-  # Blocked entries are shown but cannot be chosen; that is the whole point of
-  # showing them. Only unfixable blocks land here — an entry whose blocks the
-  # installer can fix itself is selectable and says so on its row.
-  local -a blocked=()
-  for name in $(manifest_names); do
-    [ -z "$(entry_hard_blocks "$name")" ] || blocked+=("$name")
-  done
+  _menu_prepare
 
   while :; do
-    # One array, in display order: selectable rows first, blocked rows after.
-    # Built with explicit appends because "${arr[@]:-}" on an empty array
-    # expands to a single empty argument, which would shift every row number.
-    rows=()
-    for name in "${all[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
-    for name in "${blocked[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
-
     printf '\n  #  entry        cost/session           status\n' >&2
-    i=0
-    for name in "${all[@]}"; do
-      i=$((i + 1))
-      status=$(_menu_status "$name")
-      if printf '%s\n' "${chosen[@]}" | grep -qx "$name"; then
-        printf '  %d [x] %-12s %-22s %s\n' "$i" "$name" "$(manifest_field "$name" 7)" "$status" >&2
-      else
-        printf '  %d [ ] %-12s %-22s %s\n' "$i" "$name" "$(manifest_field "$name" 7)" "$status" >&2
+    # Installed and blocked rows are numbered too, continuing after the
+    # selectable ones: the prompt offers `d <n>` for them, and an unnumbered
+    # row is an instruction the user cannot follow.
+    for idx in "${!rows[@]}"; do
+      name=${rows[$idx]}
+      i=$((idx + 1))
+      mark=${row_mark[$idx]}
+      if [ "$mark" = " " ]; then
+        if printf '%s\n' "${chosen[@]:-}" | grep -qx "$name"; then mark="x"; fi
       fi
+      printf '  %d [%s] %-12s %-22s %s\n' \
+        "$i" "$mark" "$name" "${row_cost[$idx]}" "${row_status[$idx]}" >&2
     done
-    # Blocked rows are numbered too, continuing after the selectable ones: the
-    # prompt offers `d <n>` for them, and an unnumbered row is an instruction
-    # the user cannot follow.
-    for name in "${blocked[@]:-}"; do
-      [ -n "$name" ] || continue
-      i=$((i + 1))
-      printf '  %d [!] %-12s %-22s BLOCKED: needs %s\n' \
-        "$i" "$name" "$(manifest_field "$name" 7)" \
-        "$(entry_deps "$name" block | tr '\n' ' ' | sed 's/ *$//')" >&2
-    done
+    [ -z "$own_line" ] || printf '\n  %s\n' "$own_line" >&2
     printf '\ntoggle 1-%d · a=all · n=none · d <n>=why · Enter=install %d · q=quit\n> ' \
       "${#rows[@]}" "$(_menu_count)" >&2
 
@@ -200,6 +255,11 @@ _menu_plain() {
         idx=${reply#d}; idx=${idx# }
         name=$(_menu_row "$idx") || {
           printf '   d needs a row number, e.g. d 2\n' >&2; continue; }
+        if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
+          printf '   %s already installed (remove: scripts/loadout remove %s)\n' \
+            "$name" "$name" >&2
+          continue
+        fi
         token=$(entry_deps "$name" block | head -1)
         if [ -n "$token" ]; then
           explain_dep "$token" "$name" >&2
@@ -260,18 +320,13 @@ _menu_restore() {
 # instead of scrolling one copy of itself per keystroke.
 _menu_interactive() {
   local -a all=("$@") chosen=() rows=()
+  local -a installed=() blocked=() row_mark=() row_cost=() row_status=()
   local i name cur=0 key seq idx token feedback="" drawn=0 inplace=0
   local status line mark cursor frame_lines=0 last_frame=0 fline stty_saved=""
-  local frame_buf=""
+  local frame_buf="" own_line=""
   for name in "${all[@]}"; do [ -n "$name" ] && chosen+=("$name"); done
 
-  local -a blocked=()
-  for name in $(manifest_names); do
-    [ -z "$(entry_hard_blocks "$name")" ] || blocked+=("$name")
-  done
-  rows=()
-  for name in "${all[@]:-}";     do [ -n "$name" ] && rows+=("$name"); done
-  for name in "${blocked[@]:-}"; do [ -n "$name" ] && rows+=("$name"); done
+  _menu_prepare
 
   # In-place redraw and a hidden terminal cursor only when stderr really is a
   # terminal; through a pipe (the pty-driven tests capture stderr that way)
@@ -290,27 +345,28 @@ _menu_interactive() {
 
     _menu_ln ""
     _menu_ln "    #  entry        cost/session           status"
-    i=0
-    for name in "${rows[@]:-}"; do
-      [ -n "$name" ] || continue
-      i=$((i + 1))
-      cursor=" "; [ $((i - 1)) -eq "$cur" ] && cursor="${C_BOLD}▸${C_RESET}"
-      if printf '%s\n' "${blocked[@]:-}" | grep -qx "$name"; then
-        status="${C_RED}BLOCKED: needs $(entry_deps "$name" block | tr '\n' ' ' | sed 's/ *$//')${C_RESET}"
-        mark="!"
-      else
-        status=$(_menu_status "$name")
-        case "$status" in
-          ready) status="${C_GREEN}ready${C_RESET}" ;;
-          *)     status="${C_YELLOW}${status}${C_RESET}" ;;
-        esac
-        if printf '%s\n' "${chosen[@]:-}" | grep -qx "$name"; then mark="x"; else mark=" "; fi
-      fi
-      printf -v line '%d [%s] %-12s %-22s' "$i" "$mark" "$name" "$(manifest_field "$name" 7)"
+    for idx in "${!rows[@]}"; do
+      name=${rows[$idx]}
+      i=$((idx + 1))
+      cursor=" "; [ "$idx" -eq "$cur" ] && cursor="${C_BOLD}▸${C_RESET}"
+      mark=${row_mark[$idx]}
+      case "$mark" in
+        =) status="${C_DIM}${row_status[$idx]}${C_RESET}" ;;
+        !) status="${C_RED}${row_status[$idx]}${C_RESET}" ;;
+        *)
+          case "${row_status[$idx]}" in
+            ready) status="${C_GREEN}ready${C_RESET}" ;;
+            *)     status="${C_YELLOW}${row_status[$idx]}${C_RESET}" ;;
+          esac
+          if printf '%s\n' "${chosen[@]:-}" | grep -qx "$name"; then mark="x"; fi ;;
+      esac
+      printf -v line '%d [%s] %-12s %-22s' "$i" "$mark" "$name" "${row_cost[$idx]}"
       line=${line/\[x\]/[${C_GREEN}x${C_RESET}]}
+      line=${line/\[=\]/[${C_DIM}=${C_RESET}]}
       line=${line/\[!\]/[${C_RED}!${C_RESET}]}
       _menu_ln " $cursor $line$status"
     done
+    [ -z "$own_line" ] || _menu_ln "   ${C_DIM}${own_line}${C_RESET}"
     _menu_ln ""
     _menu_ln "${C_BOLD}↑/↓${C_RESET} move · ${C_BOLD}Space${C_RESET} toggle · d=why · a=all · n=none · ${C_BOLD}Enter${C_RESET}=install $(_menu_count) · q=quit"
     # The feedback area holds one line ("toggled graphify off") or a whole
@@ -366,6 +422,10 @@ _menu_interactive() {
         # The explanation renders inside the frame's feedback area, so it
         # replaces the previous frame like any other keystroke instead of
         # pushing a second copy of the menu down the screen.
+        if printf '%s\n' "${installed[@]:-}" | grep -qx "$name"; then
+          feedback="$name already installed (remove: scripts/loadout remove $name)"
+          continue
+        fi
         token=$(entry_deps "$name" block | head -1)
         if [ -n "$token" ]; then
           feedback=$(explain_dep "$token" "$name")
